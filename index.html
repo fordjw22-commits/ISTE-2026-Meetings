@@ -226,8 +226,8 @@ main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
         <div class="form-field"><label>Date *</label><input type="text" id="f-date" placeholder="e.g. 06/29/2026"></div>
         <div class="form-field"><label>Time</label><input type="text" id="f-time" placeholder="e.g. 10:00 AM PT"></div>
         <div class="form-field full"><label>Location / Booth</label><input type="text" id="f-location" placeholder="e.g. Booth 1412, Coffee bar, or Virtual"></div>
-        <div class="form-field full"><label>Your name (rep) *</label><input type="text" id="f-rep" placeholder="e.g. Josh Ford"></div>
-        <div class="form-field full"><label>Notes</label><input type="text" id="f-notes" placeholder="e.g. Bring proposal deck, confirm exec joining"></div>
+        <div class="form-field full"><label>Meeting owner (rep) *</label><input type="text" id="f-rep" placeholder="e.g. Josh Ford"></div>
+        <div class="form-field full"><label>Notes <span style="text-transform:none;font-weight:400;color:var(--text-light);">— add any extra attendees here</span></label><input type="text" id="f-notes" placeholder="e.g. Bring deck. Holly + Editorial joining."></div>
       </div>
       <div class="form-actions">
         <button class="btn-cancel" onclick="closeModal()">Cancel</button>
@@ -257,6 +257,16 @@ let meetings = [];
 let activeFilter = 'all';
 let editingId = null;
 let deletingId = null;
+
+// ── AMS reps (meeting owners) ────────────────────────────────────────────────
+const TEAM = [
+  { name: 'Guy' }, { name: 'Julie' }, { name: 'Valerie' }, { name: 'Josh' }, { name: 'Daniel' }
+];
+// Match a meeting to a rep by owner first name
+function meetingHasPerson(m, person) {
+  const ownerFirst = (m.rep || '').trim().split(/\s+/)[0].toLowerCase();
+  return ownerFirst === person.toLowerCase();
+}
 
 function load() {
   try { meetings = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch(e) { meetings = []; }
@@ -546,7 +556,7 @@ function openModal(id) {
   editingId = id || null;
   const isEdit = !!editingId;
   document.getElementById('modal-title').textContent = isEdit ? 'Edit meeting' : 'Log a meeting';
-  document.getElementById('modal-subtitle').textContent = isEdit ? 'Update the details below' : 'Upload your .ics file — we\'ll fill in the details automatically';
+  document.getElementById('modal-subtitle').textContent = isEdit ? 'Update the details below' : 'Upload your invite file — we\'ll fill in the details automatically';
   document.getElementById('submit-btn').textContent = isEdit ? 'Save changes →' : 'Log this meeting →';
   document.getElementById('drop-zone').classList.toggle('hidden', isEdit);
   document.getElementById('parsed-indicator').style.display = 'none';
@@ -658,7 +668,7 @@ function cardHTML(m) {
         <div class="card-contact">${contactLine || '—'}${m.notes ? ' · 📝 ' + m.notes : ''}</div>
       </div>
       <div class="card-right">
-        <span class="rep-badge">${m.rep.split(' ')[0]}</span>
+        <span class="rep-badge" title="Owner: ${m.rep}">${m.rep.split(' ')[0]}</span>
         <span class="type-dot ${m.isVirtual?'virtual':'in-person'}" title="${m.isVirtual?'Virtual':'In person'}"></span>
         <div class="card-actions">
           <button class="btn-edit" onclick="openModal(${m.id})" title="Edit" aria-label="Edit">✏️</button>
@@ -681,12 +691,12 @@ function render() {
 
   const filterWrap = document.getElementById('rep-filters');
   filterWrap.innerHTML = `<button class="filter-btn ${activeFilter==='all'?'active':''}" onclick="setFilter('all')">All</button>` +
-    [...reps].map(r=>`<button class="filter-btn ${activeFilter===r?'active':''}" onclick="setFilter(${JSON.stringify(r)})">${r.split(' ')[0]}</button>`).join('');
+    TEAM.map(p=>`<button class="filter-btn ${activeFilter===p.name?'active':''}" onclick="setFilter(${JSON.stringify(p.name)})">${p.name}</button>`).join('');
 
-  const filtered = activeFilter==='all' ? meetings : meetings.filter(m=>m.rep===activeFilter);
+  const filtered = activeFilter==='all' ? meetings : meetings.filter(m=>meetingHasPerson(m, activeFilter));
 
   if (!filtered.length) {
-    grid.innerHTML = `<div class="empty" id="empty-state"><div class="empty-icon">📅</div><h3>No meetings logged yet</h3><p>Click "Log meeting" and upload your invite file — takes about 10 seconds.</p></div>`;
+    grid.innerHTML = `<div class="empty" id="empty-state"><div class="empty-icon">📅</div><h3>${activeFilter==='all'?'No meetings logged yet':'No meetings for '+activeFilter+' yet'}</h3><p>${activeFilter==='all'?'Click "Log meeting" and upload your invite file — takes about 10 seconds.':'Try another name or view All.'}</p></div>`;
     return;
   }
 
@@ -715,7 +725,7 @@ function setFilter(r) { activeFilter=r; render(); }
 // ── Export ───────────────────────────────────────────────────────────────────
 function exportCSV() {
   if (!meetings.length) { showToast('No meetings to export','error'); return; }
-  const rows=[['Account','Contact','Date','Time','Location','Rep','Virtual','Notes','Logged At']];
+  const rows=[['Account','Contact','Date','Time','Location','Owner','Virtual','Notes','Logged At']];
   meetings.forEach(m=>rows.push([m.account,m.contact,m.date,m.time,m.location,m.rep,m.isVirtual?'Yes':'No',m.notes||'',m.loggedAt]));
   const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
   const a=document.createElement('a'); a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv); a.download='ISTE2026_meetings.csv'; a.click();
