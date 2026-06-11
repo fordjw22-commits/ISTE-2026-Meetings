@@ -57,25 +57,30 @@ main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
 
 .meeting-grid { display: flex; flex-direction: column; gap: 8px; }
 
-.meeting-card { background: var(--white); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 20px; display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: start; box-shadow: var(--shadow); transition: box-shadow 0.15s; }
+.meeting-card { background: var(--white); border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 14px; display: grid; grid-template-columns: 62px 1fr auto; gap: 12px; align-items: center; box-shadow: var(--shadow); transition: box-shadow 0.15s; }
 .meeting-card:hover { box-shadow: var(--shadow-md); }
 .meeting-card.virtual { border-left: 3px solid #5b8def; }
 .meeting-card.in-person { border-left: 3px solid var(--green); }
 
-.card-left { display: flex; flex-direction: column; gap: 6px; }
-.card-account { font-size: 16px; font-weight: 700; color: var(--navy); }
-.card-contact { font-size: 13px; color: var(--text-mid); }
-.card-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
-.meta-pill { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-mid); background: var(--bg); border: 1px solid var(--border); border-radius: 99px; padding: 3px 10px; }
+.card-time { font-size: 13px; font-weight: 700; color: var(--navy); white-space: nowrap; line-height: 1.15; }
+.card-time .ampm { font-size: 10px; font-weight: 600; color: var(--text-light); }
+.card-left { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.card-account { font-size: 14px; font-weight: 700; color: var(--navy); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-contact { font-size: 12px; color: var(--text-mid); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-contact .loc { color: var(--text-light); }
+.card-meta { display: none; }
+.meta-pill { display: none; }
 
-.card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
-.rep-badge { font-size: 12px; font-weight: 600; background: var(--blue-soft); color: var(--navy-mid); border-radius: 99px; padding: 4px 12px; white-space: nowrap; }
-.type-badge { font-size: 11px; border-radius: 99px; padding: 3px 10px; font-weight: 600; }
-.type-badge.virtual { background: #ebf0fd; color: #3b5bdb; }
-.type-badge.in-person { background: var(--green-soft); color: var(--green); }
+.card-right { display: flex; flex-direction: row; align-items: center; gap: 6px; }
+.rep-badge { font-size: 11px; font-weight: 600; background: var(--blue-soft); color: var(--navy-mid); border-radius: 99px; padding: 3px 9px; white-space: nowrap; }
+.type-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.type-dot.virtual { background: #5b8def; }
+.type-dot.in-person { background: var(--green); }
+.type-badge { display: none; }
 
-.card-actions { display: flex; gap: 6px; margin-top: 4px; }
-.btn-edit, .btn-delete { border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 11px; font-size: 12px; cursor: pointer; transition: all 0.15s; background: var(--white); }
+.card-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.15s; }
+.meeting-card:hover .card-actions { opacity: 1; }
+.btn-edit, .btn-delete { border: 1px solid var(--border); border-radius: 6px; width: 26px; height: 26px; padding: 0; font-size: 12px; cursor: pointer; transition: all 0.15s; background: var(--white); display: flex; align-items: center; justify-content: center; }
 .btn-edit { color: var(--navy-mid); }
 .btn-edit:hover { background: var(--blue-soft); border-color: var(--navy-mid); }
 .btn-delete { color: var(--accent); }
@@ -125,8 +130,15 @@ main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .toast.success { border-left: 4px solid #4ade80; }
 
-.day-divider { font-size: 12px; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.07em; padding: 8px 0 4px; border-bottom: 1px solid var(--border); margin: 16px 0 8px; }
+.day-divider { display: flex; align-items: center; gap: 10px; padding: 8px 0 6px; border-bottom: 2px solid var(--navy); margin: 20px 0 10px; }
 .day-divider:first-child { margin-top: 0; }
+.day-divider .day-name { font-size: 14px; font-weight: 700; color: var(--navy); }
+.day-divider .day-date { font-size: 12px; color: var(--text-light); font-weight: 500; }
+.day-divider .day-count { margin-left: auto; font-size: 11px; font-weight: 600; color: var(--text-mid); background: var(--bg); border: 1px solid var(--border); border-radius: 99px; padding: 2px 10px; }
+.day-divider.empty-day { border-bottom-color: var(--border); opacity: 0.6; }
+.day-empty-note { font-size: 12px; color: var(--text-light); padding: 6px 14px; font-style: italic; }
+.day-divider.other { border-bottom-color: var(--border); }
+.day-divider.other .day-name { color: var(--text-mid); }
 
 .btn-export { background: transparent; border: 1px solid rgba(255,255,255,0.25); color: rgba(255,255,255,0.8); border-radius: var(--radius); padding: 7px 13px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.15s; }
 .btn-export:hover { background: rgba(255,255,255,0.1); color: white; }
@@ -616,14 +628,53 @@ function confirmDelete() {
 }
 
 // ── Render ───────────────────────────────────────────────────────────────────
+const CONF_DAYS = [
+  { date: '06/29/2026', name: 'Monday',    short: 'Jun 29' },
+  { date: '06/30/2026', name: 'Tuesday',   short: 'Jun 30' },
+  { date: '07/01/2026', name: 'Wednesday', short: 'Jul 1' }
+];
+const CONF_DATES = new Set(CONF_DAYS.map(d => d.date));
+
+function timeToMinutes(t) {
+  if (!t || t === '—') return 9999;
+  const m = t.match(/(\d{1,2}):(\d{2})\s*([AP])M/i);
+  if (!m) return 9999;
+  let h = +m[1] % 12; if (m[3].toUpperCase() === 'P') h += 12;
+  return h * 60 + (+m[2]);
+}
+
+function cardHTML(m) {
+  const tm = (m.time && m.time !== '—') ? m.time.replace(/\s*ET$/,'') : '—';
+  const tparts = tm.match(/^(\d{1,2}:\d{2})\s*([AP]M)?/i);
+  const timeMain = tparts ? tparts[1] : tm;
+  const timeAmpm = tparts && tparts[2] ? tparts[2].toUpperCase() + ' ET' : '';
+  const loc = (m.location && m.location !== '—') ? m.location : '';
+  const contactLine = [m.contact !== '—' ? m.contact : '', loc ? '· ' + loc : ''].filter(Boolean).join(' ');
+  return `
+    <div class="meeting-card ${m.isVirtual?'virtual':'in-person'}">
+      <div class="card-time">${timeMain}<span class="ampm">${timeAmpm}</span></div>
+      <div class="card-left">
+        <div class="card-account">${m.account}</div>
+        <div class="card-contact">${contactLine || '—'}${m.notes ? ' · 📝 ' + m.notes : ''}</div>
+      </div>
+      <div class="card-right">
+        <span class="rep-badge">${m.rep.split(' ')[0]}</span>
+        <span class="type-dot ${m.isVirtual?'virtual':'in-person'}" title="${m.isVirtual?'Virtual':'In person'}"></span>
+        <div class="card-actions">
+          <button class="btn-edit" onclick="openModal(${m.id})" title="Edit" aria-label="Edit">✏️</button>
+          <button class="btn-delete" onclick="openDeleteConfirm(${m.id})" title="Remove" aria-label="Remove">✕</button>
+        </div>
+      </div>
+    </div>`;
+}
+
 function render() {
   const grid = document.getElementById('meeting-grid');
-  const todayStr = new Date().toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'});
-  const todayCount = meetings.filter(m=>m.date===todayStr).length;
   const reps = new Set(meetings.map(m=>m.rep));
 
   document.getElementById('stat-total').textContent = meetings.length;
-  document.getElementById('stat-today').textContent = todayCount;
+  const todayStr = new Date().toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'});
+  document.getElementById('stat-today').textContent = meetings.filter(m=>m.date===todayStr).length;
   document.getElementById('stat-today-date').textContent = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'});
   document.getElementById('stat-reps').textContent = reps.size;
   document.getElementById('stat-virtual').textContent = meetings.filter(m=>m.isVirtual).length;
@@ -635,42 +686,30 @@ function render() {
   const filtered = activeFilter==='all' ? meetings : meetings.filter(m=>m.rep===activeFilter);
 
   if (!filtered.length) {
-    grid.innerHTML = `<div class="empty" id="empty-state"><div class="empty-icon">📅</div><h3>No meetings logged yet</h3><p>Click "Log meeting" and upload your .ics file — takes about 10 seconds.</p></div>`;
+    grid.innerHTML = `<div class="empty" id="empty-state"><div class="empty-icon">📅</div><h3>No meetings logged yet</h3><p>Click "Log meeting" and upload your invite file — takes about 10 seconds.</p></div>`;
     return;
   }
 
-  const byDate = {};
-  filtered.forEach(m=>{ (byDate[m.date]=byDate[m.date]||[]).push(m); });
+  let html = '';
 
-  grid.innerHTML = Object.entries(byDate).map(([date,items])=>{
-    const label = formatDateLabel(date);
-    const cards = items.map(m=>`
-      <div class="meeting-card ${m.isVirtual?'virtual':'in-person'}">
-        <div class="card-left">
-          <div class="card-account">${m.account}</div>
-          <div class="card-contact">👤 ${m.contact}</div>
-          <div class="card-meta">
-            <span class="meta-pill">🕐 ${m.time}</span>
-            <span class="meta-pill">📍 ${m.location}</span>
-          </div>
-          ${m.notes?`<div style="font-size:12px;color:var(--text-light);margin-top:4px;">📝 ${m.notes}</div>`:''}
-          <div class="card-actions">
-            <button class="btn-edit" onclick="openModal(${m.id})">✏️ Edit</button>
-            <button class="btn-delete" onclick="openDeleteConfirm(${m.id})">✕ Remove</button>
-          </div>
-        </div>
-        <div class="card-right">
-          <span class="rep-badge">${m.rep}</span>
-          <span class="type-badge ${m.isVirtual?'virtual':'in-person'}">${m.isVirtual?'Virtual':'In person'}</span>
-        </div>
-      </div>`).join('');
-    return `<div class="day-divider">${label} · ${items.length} meeting${items.length!==1?'s':''}</div>${cards}`;
-  }).join('');
+  // The three conference days, always shown in order
+  for (const day of CONF_DAYS) {
+    const items = filtered.filter(m => m.date === day.date).sort((a,b)=>timeToMinutes(a.time)-timeToMinutes(b.time));
+    html += `<div class="day-divider${items.length?'':' empty-day'}"><span class="day-name">${day.name}</span><span class="day-date">${day.short}</span><span class="day-count">${items.length} mtg${items.length!==1?'s':''}</span></div>`;
+    if (items.length) html += items.map(cardHTML).join('');
+    else html += `<div class="day-empty-note">No meetings booked yet</div>`;
+  }
+
+  // Anything outside the three days, grouped under "Other dates"
+  const others = filtered.filter(m => !CONF_DATES.has(m.date)).sort((a,b)=>timeToMinutes(a.time)-timeToMinutes(b.time));
+  if (others.length) {
+    html += `<div class="day-divider other"><span class="day-name">Other dates</span><span class="day-count">${others.length} mtg${others.length!==1?'s':''}</span></div>`;
+    html += others.map(cardHTML).join('');
+  }
+
+  grid.innerHTML = html;
 }
 
-function formatDateLabel(d) {
-  try { const [mo,dy,y]=d.split('/'); return new Date(+y,+mo-1,+dy).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}); } catch(e){ return d; }
-}
 function setFilter(r) { activeFilter=r; render(); }
 
 // ── Export ───────────────────────────────────────────────────────────────────
