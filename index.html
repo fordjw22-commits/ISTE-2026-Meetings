@@ -408,6 +408,21 @@ function cleanNameFromEmail(local) {
   return parts.map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(' ');
 }
 
+// Known AMS rep email handles → full names (overrides email-guessing)
+const REP_EMAIL_MAP = {
+  dcriner: 'Daniel Criner',
+  gblumberg: 'Guy Blumberg',
+  jfagan: 'Julie Fagan',
+  jford: 'Josh Ford',
+  vsaba: 'Valerie Saba'
+};
+// Resolve a rep name from an EdWeek email local-part, falling back to cleanup
+function repNameFromHandle(local) {
+  const key = (local||'').split('+')[0].toLowerCase();
+  return REP_EMAIL_MAP[key] || cleanNameFromEmail(local);
+}
+
+
 // ── Timezone → Eastern conversion (conference runs on Eastern time) ──────────
 // Maps common Windows/IANA tz names to their standard-time UTC offset (hours).
 // DST is handled with a US-rules approximation good for conference dates (late June).
@@ -453,7 +468,13 @@ function parseICS(raw) {
 
   const summary = get(evt, 'SUMMARY');
   const location = get(evt, 'LOCATION');
-  const organizer = (evt.match(/ORGANIZER[^:]*CN=("?)([^":;\r\n]+)\1/)||[])[2]?.trim() || '';
+  let organizer = (evt.match(/ORGANIZER[^:]*CN=("?)([^":;\r\n]+)\1/)||[])[2]?.trim() || '';
+  // If the CN is missing or looks like an email/handle, map it to the rep's full name
+  const orgEmail = (evt.match(/ORGANIZER[^:\r\n]*:mailto:([^\r\n\t ]+)/i)||[])[1];
+  if (orgEmail && orgEmail.toLowerCase().includes('educationweek')) {
+    const mapped = repNameFromHandle(orgEmail.split('@')[0]);
+    if (!organizer || organizer.includes('@')) organizer = mapped;
+  }
 
   // 3. DTSTART with a TZID is the real meeting start (inside VEVENT, post-unfold)
   let dtstartLine = (evt.match(/DTSTART[^:\r\n]*:[^\r\n]+/)||[])[0] || '';
@@ -518,6 +539,43 @@ function parseICS(raw) {
 // ── MSG Parser (Outlook binary format — best-effort text extraction) ─────────
 const MONTHS = {january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12,jan:1,feb:2,mar:3,apr:4,jun:6,jul:7,aug:8,sep:9,sept:9,oct:10,nov:11,dec:12};
 
+// Pull the real appointment time from the .msg binary.
+// Outlook stores times as 8-byte FILETIME (100ns ticks since 1601-01-01 UTC).
+// The file contains several: the meeting start/end AND the accept/sent date.
+// We anchor to the conference days to ignore the acceptance date, then pick the
+// most frequently-stored timestamp (the start) over end/reminder times.
+const FILETIME_1601_TO_1970_MS = 11644473600000;
+function extractMsgAppointment(bytes) {
+  if (!bytes || bytes.length < 8) return null;
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const tally = {}; // "MM/DD/YYYY|HH:MM" → count
+  for (let i = 0; i + 8 <= bytes.length; i++) {
+    let ticks;
+    try { ticks = dv.getBigUint64(i, true); } catch(e) { break; }
+    if (ticks === 0n) continue;
+    const ms = Number(ticks / 10000n) - FILETIME_1601_TO_1970_MS;
+    // plausible window: 2025–2027
+    if (ms < 1735689600000 || ms > 1830297600000) continue;
+    const d = new Date(ms);
+    const conv = toEastern(d.getUTCFullYear(), d.getUTCMonth()+1, d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes(), 'UTC');
+    const mdy = String(conv.mo).padStart(2,'0')+'/'+String(conv.dy).padStart(2,'0')+'/'+conv.yr;
+    if (!CONF_DATES.has(mdy)) continue;            // ignore the acceptance date
+    const key = mdy + '|' + String(conv.hh).padStart(2,'0')+':'+String(conv.mm).padStart(2,'0');
+    tally[key] = (tally[key]||0) + 1;
+  }
+  const keys = Object.keys(tally);
+  if (!keys.length) return null;
+  // highest count = the start; tie-break to the earliest time of day
+  keys.sort((a,b) => {
+    if (tally[b] !== tally[a]) return tally[b]-tally[a];
+    return a.split('|')[1] < b.split('|')[1] ? -1 : 1;
+  });
+  const [mdy, hm] = keys[0].split('|');
+  const [h, m] = hm.split(':').map(Number);
+  let dh = h % 12 || 12, ap = h >= 12 ? 'PM' : 'AM';
+  return { date: mdy, time: dh + ':' + String(m).padStart(2,'0') + ' ' + ap + ' ET' };
+}
+
 function parseMSG(buf, filename) {
   const bytes = new Uint8Array(buf);
   let u16 = '', ascii = '';
@@ -550,53 +608,61 @@ function parseMSG(buf, filename) {
 
   const isVirtual = /teams\.microsoft\.com|zoom\.us|meet\.google/i.test(blob) || /virtual|teams|zoom/i.test(subject);
 
-  // Rep from the EdWeek sender address
+  // Rep from the EdWeek sender address (mapped to full name when known)
   let rep = '';
   const ew = blob.match(/([A-Z0-9._%+\-]+)@educationweek\.org/i);
-  if (ew) rep = cleanNameFromEmail(ew[1]);
-
-  // Date / time — try the body "When:" line first, then the subject, then loose date scan
-  let yr,mo,dy,hh,mn,srcTZ='';
-  const when = blob.match(/When:\s*([^\r\n]{5,120})/i);
-  if (when) {
-    const w = when[1];
-    const dm = w.match(/([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})/);
-    if (dm && MONTHS[dm[1].toLowerCase()]) { mo=MONTHS[dm[1].toLowerCase()]; dy=+dm[2]; yr=+dm[3]; }
-    const tm = w.match(/(\d{1,2}):(\d{2})\s*([AP])M/i);
-    if (tm) { hh=+tm[1]; mn=+tm[2]; const ap=tm[3].toUpperCase(); if(ap==='P'&&hh<12)hh+=12; if(ap==='A'&&hh===12)hh=0; }
-    if (/eastern|UTC-0?5:00/i.test(w)) srcTZ='Eastern Standard Time';
-    else if (/pacific|UTC-0?8:00/i.test(w)) srcTZ='Pacific Standard Time';
-    else if (/central|UTC-0?6:00/i.test(w)) srcTZ='Central Standard Time';
-    else if (/mountain|UTC-0?7:00/i.test(w)) srcTZ='Mountain Standard Time';
-  }
-  if (hh === undefined) {
-    const tm = subject.match(/(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\.?\s*(EST|EDT|ET|PST|PDT|PT|CST|CDT|CT|MST|MDT|MT)?/i);
-    if (tm) {
-      hh=+tm[1]; mn=tm[2]?+tm[2]:0; const ap=tm[3].toLowerCase(); if(ap==='p'&&hh<12)hh+=12; if(ap==='a'&&hh===12)hh=0;
-      const z=(tm[4]||'').toUpperCase();
-      const zmap={PST:'Pacific Standard Time',PDT:'Pacific Standard Time',PT:'Pacific Standard Time',CST:'Central Standard Time',CDT:'Central Standard Time',CT:'Central Standard Time',MST:'Mountain Standard Time',MDT:'Mountain Standard Time',MT:'Mountain Standard Time',EST:'Eastern Standard Time',EDT:'Eastern Standard Time',ET:'Eastern Standard Time'};
-      srcTZ = zmap[z] || 'Eastern Standard Time';
-    }
-  }
-  if (yr === undefined) {
-    const dm = blob.match(/\b(20\d{2})[-\/](\d{1,2})[-\/](\d{1,2})\b/);
-    const dm2 = blob.match(/\b(\d{1,2})\/(\d{1,2})\/(20\d{2})\b/);
-    if (dm) { yr=+dm[1]; mo=+dm[2]; dy=+dm[3]; }
-    else if (dm2) { mo=+dm2[1]; dy=+dm2[2]; yr=+dm2[3]; }
-  }
+  if (ew) rep = repNameFromHandle(ew[1]);
 
   let date='', time='';
-  if (hh !== undefined) {
-    if (yr !== undefined) {
-      const c = toEastern(yr,mo,dy,hh,mn||0,srcTZ||'Eastern Standard Time');
-      date = String(c.mo).padStart(2,'0')+'/'+String(c.dy).padStart(2,'0')+'/'+c.yr;
-      let h=c.hh,ap=h>=12?'PM':'AM'; h=h%12||12; time=h+':'+String(c.mm).padStart(2,'0')+' '+ap+' ET';
-    } else {
-      const c = toEastern(2026,6,29,hh,mn||0,srcTZ||'Eastern Standard Time');
-      let h=c.hh,ap=h>=12?'PM':'AM'; h=h%12||12; time=h+':'+String(c.mm).padStart(2,'0')+' '+ap+' ET';
+
+  // BEST source: the appointment's binary timestamp, anchored to a conference day.
+  // This ignores the acceptance/sent date and gives the true meeting date + time.
+  const appt = extractMsgAppointment(bytes);
+  if (appt) {
+    date = appt.date;
+    time = appt.time;
+  } else {
+    // Fallbacks — body "When:" line, then the subject, then a loose date scan
+    let yr,mo,dy,hh,mn,srcTZ='';
+    const when = blob.match(/When:\s*([^\r\n]{5,120})/i);
+    if (when) {
+      const w = when[1];
+      const dm = w.match(/([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})/);
+      if (dm && MONTHS[dm[1].toLowerCase()]) { mo=MONTHS[dm[1].toLowerCase()]; dy=+dm[2]; yr=+dm[3]; }
+      const tm = w.match(/(\d{1,2}):(\d{2})\s*([AP])M/i);
+      if (tm) { hh=+tm[1]; mn=+tm[2]; const ap=tm[3].toUpperCase(); if(ap==='P'&&hh<12)hh+=12; if(ap==='A'&&hh===12)hh=0; }
+      if (/eastern|UTC-0?5:00/i.test(w)) srcTZ='Eastern Standard Time';
+      else if (/pacific|UTC-0?8:00/i.test(w)) srcTZ='Pacific Standard Time';
+      else if (/central|UTC-0?6:00/i.test(w)) srcTZ='Central Standard Time';
+      else if (/mountain|UTC-0?7:00/i.test(w)) srcTZ='Mountain Standard Time';
     }
-  } else if (yr !== undefined) {
-    date = String(mo).padStart(2,'0')+'/'+String(dy).padStart(2,'0')+'/'+yr;
+    if (hh === undefined) {
+      const tm = subject.match(/(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\.?\s*(EST|EDT|ET|PST|PDT|PT|CST|CDT|CT|MST|MDT|MT)?/i);
+      if (tm) {
+        hh=+tm[1]; mn=tm[2]?+tm[2]:0; const ap=tm[3].toLowerCase(); if(ap==='p'&&hh<12)hh+=12; if(ap==='a'&&hh===12)hh=0;
+        const z=(tm[4]||'').toUpperCase();
+        const zmap={PST:'Pacific Standard Time',PDT:'Pacific Standard Time',PT:'Pacific Standard Time',CST:'Central Standard Time',CDT:'Central Standard Time',CT:'Central Standard Time',MST:'Mountain Standard Time',MDT:'Mountain Standard Time',MT:'Mountain Standard Time',EST:'Eastern Standard Time',EDT:'Eastern Standard Time',ET:'Eastern Standard Time'};
+        srcTZ = zmap[z] || 'Eastern Standard Time';
+      }
+    }
+    if (yr === undefined) {
+      const dm = blob.match(/\b(20\d{2})[-\/](\d{1,2})[-\/](\d{1,2})\b/);
+      const dm2 = blob.match(/\b(\d{1,2})\/(\d{1,2})\/(20\d{2})\b/);
+      if (dm) { yr=+dm[1]; mo=+dm[2]; dy=+dm[3]; }
+      else if (dm2) { mo=+dm2[1]; dy=+dm2[2]; yr=+dm2[3]; }
+    }
+    if (hh !== undefined) {
+      if (yr !== undefined) {
+        const c = toEastern(yr,mo,dy,hh,mn||0,srcTZ||'Eastern Standard Time');
+        date = String(c.mo).padStart(2,'0')+'/'+String(c.dy).padStart(2,'0')+'/'+c.yr;
+        let h=c.hh,ap=h>=12?'PM':'AM'; h=h%12||12; time=h+':'+String(c.mm).padStart(2,'0')+' '+ap+' ET';
+      } else {
+        const c = toEastern(2026,6,29,hh,mn||0,srcTZ||'Eastern Standard Time');
+        let h=c.hh,ap=h>=12?'PM':'AM'; h=h%12||12; time=h+':'+String(c.mm).padStart(2,'0')+' '+ap+' ET';
+      }
+    } else if (yr !== undefined) {
+      date = String(mo).padStart(2,'0')+'/'+String(dy).padStart(2,'0')+'/'+yr;
+    }
   }
 
   return {
