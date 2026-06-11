@@ -200,10 +200,10 @@ main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
     </div>
     <div class="modal-body">
       <div class="drop-zone" id="drop-zone" onclick="document.getElementById('ics-input').click()">
-        <input type="file" id="ics-input" accept=".ics">
+        <input type="file" id="ics-input" accept=".ics,.msg">
         <div class="drop-icon" id="drop-icon">📎</div>
-        <p id="drop-text"><strong>Drop your .ics file here</strong> or click to browse</p>
-        <p class="hint" id="drop-hint">Save the calendar attachment from your Yesware booking email, then upload it here</p>
+        <p id="drop-text"><strong>Drop your invite file here</strong> or click to browse</p>
+        <p class="hint" id="drop-hint">Works with .ics or Outlook .msg files — save the invite from your booking email and drop it here</p>
       </div>
       <div id="parsed-indicator" style="display:none; margin-bottom:16px;">
         <span class="parsed-badge">✓ Parsed from .ics — review and confirm below</span>
@@ -397,6 +397,98 @@ function parseICS(raw) {
   };
 }
 
+// ── MSG Parser (Outlook binary format — best-effort text extraction) ─────────
+const MONTHS = {january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12,jan:1,feb:2,mar:3,apr:4,jun:6,jul:7,aug:8,sep:9,sept:9,oct:10,nov:11,dec:12};
+
+function parseMSG(buf, filename) {
+  const bytes = new Uint8Array(buf);
+  let u16 = '', ascii = '';
+  try { u16 = new TextDecoder('utf-16le').decode(bytes); } catch(e) {}
+  try { ascii = new TextDecoder('latin1').decode(bytes); } catch(e) {}
+  const blob = u16 + '\n' + ascii;
+
+  // Outlook names the saved .msg after the subject line
+  let subject = (filename||'').replace(/\.msg$/i,'').replace(/_/g,' ').trim();
+
+  const emails = [];
+  for (const m of blob.matchAll(/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/gi)) {
+    const e = m[0].toLowerCase();
+    if (IGNORE_DOMAINS.some(d => e.includes(d))) continue;
+    if (e.includes('educationweek')) continue;
+    if (!emails.includes(e)) emails.push(e);
+  }
+  const extEmail = emails[0] || '';
+  let accountGuess = '', contactGuess = '';
+  if (extEmail) {
+    const domain = extEmail.split('@')[1]?.split('.')[0] || '';
+    if (DOMAIN_MAP[domain]) accountGuess = DOMAIN_MAP[domain];
+    else if (!GENERIC_DOMAINS.has(domain)) accountGuess = domain.charAt(0).toUpperCase() + domain.slice(1);
+    contactGuess = cleanNameFromEmail(extEmail.split('@')[0]);
+  }
+  if (!accountGuess && subject) {
+    const skip = new Set(['meeting','call','intro','chat','coffee','connect','iste','edweek','virtual','teams','zoom','msft','re','fwd','from','with','w']);
+    accountGuess = subject.split(/[\s\-\/\(\)]+/).filter(w=>w.length>1&&!skip.has(w.toLowerCase())).slice(0,3).join(' ');
+  }
+
+  const isVirtual = /teams\.microsoft\.com|zoom\.us|meet\.google/i.test(blob) || /virtual|teams|zoom/i.test(subject);
+
+  // Rep from the EdWeek sender address
+  let rep = '';
+  const ew = blob.match(/([A-Z0-9._%+\-]+)@educationweek\.org/i);
+  if (ew) rep = cleanNameFromEmail(ew[1]);
+
+  // Date / time — try the body "When:" line first, then the subject, then loose date scan
+  let yr,mo,dy,hh,mn,srcTZ='';
+  const when = blob.match(/When:\s*([^\r\n]{5,120})/i);
+  if (when) {
+    const w = when[1];
+    const dm = w.match(/([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})/);
+    if (dm && MONTHS[dm[1].toLowerCase()]) { mo=MONTHS[dm[1].toLowerCase()]; dy=+dm[2]; yr=+dm[3]; }
+    const tm = w.match(/(\d{1,2}):(\d{2})\s*([AP])M/i);
+    if (tm) { hh=+tm[1]; mn=+tm[2]; const ap=tm[3].toUpperCase(); if(ap==='P'&&hh<12)hh+=12; if(ap==='A'&&hh===12)hh=0; }
+    if (/eastern|UTC-0?5:00/i.test(w)) srcTZ='Eastern Standard Time';
+    else if (/pacific|UTC-0?8:00/i.test(w)) srcTZ='Pacific Standard Time';
+    else if (/central|UTC-0?6:00/i.test(w)) srcTZ='Central Standard Time';
+    else if (/mountain|UTC-0?7:00/i.test(w)) srcTZ='Mountain Standard Time';
+  }
+  if (hh === undefined) {
+    const tm = subject.match(/(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\.?\s*(EST|EDT|ET|PST|PDT|PT|CST|CDT|CT|MST|MDT|MT)?/i);
+    if (tm) {
+      hh=+tm[1]; mn=tm[2]?+tm[2]:0; const ap=tm[3].toLowerCase(); if(ap==='p'&&hh<12)hh+=12; if(ap==='a'&&hh===12)hh=0;
+      const z=(tm[4]||'').toUpperCase();
+      const zmap={PST:'Pacific Standard Time',PDT:'Pacific Standard Time',PT:'Pacific Standard Time',CST:'Central Standard Time',CDT:'Central Standard Time',CT:'Central Standard Time',MST:'Mountain Standard Time',MDT:'Mountain Standard Time',MT:'Mountain Standard Time',EST:'Eastern Standard Time',EDT:'Eastern Standard Time',ET:'Eastern Standard Time'};
+      srcTZ = zmap[z] || 'Eastern Standard Time';
+    }
+  }
+  if (yr === undefined) {
+    const dm = blob.match(/\b(20\d{2})[-\/](\d{1,2})[-\/](\d{1,2})\b/);
+    const dm2 = blob.match(/\b(\d{1,2})\/(\d{1,2})\/(20\d{2})\b/);
+    if (dm) { yr=+dm[1]; mo=+dm[2]; dy=+dm[3]; }
+    else if (dm2) { mo=+dm2[1]; dy=+dm2[2]; yr=+dm2[3]; }
+  }
+
+  let date='', time='';
+  if (hh !== undefined) {
+    if (yr !== undefined) {
+      const c = toEastern(yr,mo,dy,hh,mn||0,srcTZ||'Eastern Standard Time');
+      date = String(c.mo).padStart(2,'0')+'/'+String(c.dy).padStart(2,'0')+'/'+c.yr;
+      let h=c.hh,ap=h>=12?'PM':'AM'; h=h%12||12; time=h+':'+String(c.mm).padStart(2,'0')+' '+ap+' ET';
+    } else {
+      const c = toEastern(2026,6,29,hh,mn||0,srcTZ||'Eastern Standard Time');
+      let h=c.hh,ap=h>=12?'PM':'AM'; h=h%12||12; time=h+':'+String(c.mm).padStart(2,'0')+' '+ap+' ET';
+    }
+  } else if (yr !== undefined) {
+    date = String(mo).padStart(2,'0')+'/'+String(dy).padStart(2,'0')+'/'+yr;
+  }
+
+  return {
+    date, time,
+    location: isVirtual ? 'Virtual (Teams)' : '',
+    isVirtual, accountGuess, contactGuess, rep,
+    matched: !!(DOMAIN_MAP[extEmail.split('@')[1]?.split('.')[0]])
+  };
+}
+
 // ── File handling ────────────────────────────────────────────────────────────
 const dropZone = document.getElementById('drop-zone');
 const icsInput = document.getElementById('ics-input');
@@ -406,25 +498,35 @@ dropZone.addEventListener('drop', e=>{e.preventDefault();dropZone.classList.remo
 icsInput.addEventListener('change', e=>{if(e.target.files[0])readFile(e.target.files[0]);});
 
 function readFile(file) {
+  const name = (file.name || '').toLowerCase();
   const reader = new FileReader();
-  reader.onload = e => {
-    const p = parseICS(e.target.result);
-    document.getElementById('f-account').value = p.accountGuess;
-    document.getElementById('f-contact').value = p.contactGuess;
-    document.getElementById('f-date').value = p.date;
-    document.getElementById('f-time').value = p.time;
-    document.getElementById('f-location').value = p.location;
-    if (p.rep) document.getElementById('f-rep').value = p.rep;
-    dropZone.classList.add('parsed');
-    document.getElementById('drop-icon').textContent = '✅';
-    document.getElementById('drop-text').innerHTML = '<strong>' + file.name + '</strong>';
+  if (name.endsWith('.msg')) {
+    reader.onload = e => applyParsed(parseMSG(e.target.result, file.name), file);
+    reader.readAsArrayBuffer(file);
+  } else {
+    reader.onload = e => applyParsed(parseICS(e.target.result), file);
+    reader.readAsText(file);
+  }
+}
 
-    const captured = [p.accountGuess&&'account', p.contactGuess&&'contact', p.date&&'date', p.time&&'time', p.location&&'location', p.rep&&'rep'].filter(Boolean).length;
-    document.getElementById('drop-hint').textContent = captured + ' of 6 fields filled automatically — just check and save';
-    document.getElementById('parsed-indicator').style.display = 'block';
-    document.querySelector('.parsed-badge').innerHTML = '✓ Auto-filled from your invite — review and save';
-  };
-  reader.readAsText(file);
+function applyParsed(p, file) {
+  document.getElementById('f-account').value = p.accountGuess;
+  document.getElementById('f-contact').value = p.contactGuess;
+  document.getElementById('f-date').value = p.date;
+  document.getElementById('f-time').value = p.time;
+  document.getElementById('f-location').value = p.location;
+  if (p.rep) document.getElementById('f-rep').value = p.rep;
+  dropZone.classList.add('parsed');
+  document.getElementById('drop-icon').textContent = '✅';
+  document.getElementById('drop-text').innerHTML = '<strong>' + file.name + '</strong>';
+
+  const captured = [p.accountGuess, p.contactGuess, p.date, p.time, p.location, p.rep].filter(Boolean).length;
+  const missing = [!p.date && 'date', !p.time && 'time'].filter(Boolean);
+  let hint = captured + ' of 6 fields filled automatically — just check and save';
+  if (missing.length) hint += ' (add ' + missing.join(' & ') + ')';
+  document.getElementById('drop-hint').textContent = hint;
+  document.getElementById('parsed-indicator').style.display = 'block';
+  document.querySelector('.parsed-badge').innerHTML = '✓ Auto-filled from your invite — review and save';
 }
 
 // ── Modal ────────────────────────────────────────────────────────────────────
@@ -465,8 +567,8 @@ function resetForm() {
   ['f-account','f-contact','f-date','f-time','f-location','f-rep','f-notes'].forEach(id=>document.getElementById(id).value='');
   dropZone.classList.remove('parsed','drag','hidden');
   document.getElementById('drop-icon').textContent='📎';
-  document.getElementById('drop-text').innerHTML='<strong>Drop your .ics file here</strong> or click to browse';
-  document.getElementById('drop-hint').textContent='Save the calendar attachment from your Yesware booking email, then upload it here';
+  document.getElementById('drop-text').innerHTML='<strong>Drop your invite file here</strong> or click to browse';
+  document.getElementById('drop-hint').textContent='Works with .ics or Outlook .msg files — save the invite from your booking email and drop it here';
   document.getElementById('parsed-indicator').style.display='none';
   icsInput.value='';
 }
