@@ -251,32 +251,150 @@ function load() {
 }
 function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(meetings)); }
 
-// ── ICS Parser ───────────────────────────────────────────────────────────────
-function parseICS(text) {
-  const get = key => { const m = text.match(new RegExp(key + '[^:\\r\\n]*:([^\\r\\n]+)')); return m ? m[1].trim() : ''; };
-  const summary = get('SUMMARY(?:;[^:]*)?' );
-  const dtstart = get('DTSTART(?:;[^:]*)?');
-  const location = get('LOCATION');
+// ── Domain → clean account name lookup (Josh's known targets) ─────────────────
+const DOMAIN_MAP = {
+  'khanacademy':'Khan Academy','goguardian':'GoGuardian','classdojo':'ClassDojo',
+  'ixl':'IXL Learning','seesaw':'Seesaw Learning','clever':'Clever','adobe':'Adobe',
+  'autodesk':'Autodesk','figma':'Figma','turnitin':'Turnitin','verkada':'Verkada',
+  'magicschool':'MagicSchool AI','parentsquare':'ParentSquare','securly':'Securly',
+  'padlet':'Padlet','edpuzzle':'Edpuzzle','logitech':'Logitech','google':'Google',
+  'microsoft':'Microsoft','cfchildren':'Committee for Children','secondstep':'Second Step',
+  'instructure':'Instructure','lexialearning':'Lexia Learning','lexia':'Lexia Learning',
+  'pearson':'Pearson','talkingpoints':'TalkingPoints','hapara':'Hapara','blocksi':'Blocksi',
+  'mindresearch':'MIND Education','stmath':'MIND Education','jotform':'Jotform','ozobot':'Ozobot',
+  'swivl':'Swivl','learninga-z':'Learning A-Z','learningaz':'Learning A-Z','ctlcorp':'CTL',
+  'ctl':'CTL','learning':'Learning.com','lightspeedsystems':'Lightspeed Systems',
+  'linewize':'Linewize','avid':'AVID Center','epson':'Epson','acer':'Acer','asus':'ASUS',
+  'viewsonic':'ViewSonic','wevideo':'WeVideo','zspace':'zSpace','quizizz':'Quizizz',
+  'brisk':'Brisk Teaching','diffit':'Diffit','esri':'Esri','barracuda':'Barracuda Networks',
+  'belkin':'Belkin','rhombus':'Rhombus','respondus':'Respondus','jupitered':'Jupiter',
+  'pblworks':'PBLWorks','pasco':'PASCO Scientific','ngpf':'Next Gen Personal Finance'
+};
 
-  const attendees = [];
-  for (const m of text.matchAll(/ATTENDEE[^:]*CN="?([^":;\r\n]+)"?/g)) { const n = m[1].trim(); if(n && !n.includes('@') && !attendees.includes(n)) attendees.push(n); }
-  for (const m of text.matchAll(/ATTENDEE[^:\r\n]*:mailto:([^\r\n\t ]+)/g)) { const e = m[1].trim(); if(!attendees.includes(e)) attendees.push(e); }
+// Generic email providers — never treat as the account
+const GENERIC_DOMAINS = new Set(['gmail','yahoo','hotmail','outlook','icloud','aol','protonmail','me','live','msn']);
+// Bot / automation senders to always ignore
+const IGNORE_DOMAINS = ['ywsync.com','calendar.google','resource.calendar','yesware'];
+
+function cleanNameFromEmail(local) {
+  // strip plus-tags
+  local = local.split('+')[0];
+  // split on common delimiters
+  let parts = local.split(/[._\-]/).filter(Boolean);
+  // if single token with no delimiter, leave as-is (can't reliably split)
+  if (parts.length === 1) {
+    // try camelCase split e.g. jasonHovey
+    const camel = parts[0].replace(/([a-z])([A-Z])/g,'$1 $2');
+    if (camel.includes(' ')) parts = camel.split(' ');
+  }
+  return parts.map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(' ');
+}
+
+// ── Timezone → Eastern conversion (conference runs on Eastern time) ──────────
+// Maps common Windows/IANA tz names to their standard-time UTC offset (hours).
+// DST is handled with a US-rules approximation good for conference dates (late June).
+const TZ_OFFSETS = {
+  'Pacific Standard Time':-8,'Pacific Daylight Time':-8,'America/Los_Angeles':-8,'PST':-8,'PDT':-8,
+  'Mountain Standard Time':-7,'America/Denver':-7,'MST':-7,'MDT':-7,
+  'Central Standard Time':-6,'America/Chicago':-6,'CST':-6,'CDT':-6,
+  'Eastern Standard Time':-5,'America/New_York':-5,'EST':-5,'EDT':-5,
+  'UTC':0,'GMT':0,'Coordinated Universal Time':0
+};
+// US DST: 2nd Sunday March → 1st Sunday November. ISTE (late June) is always DST.
+function isUSDST(yr, mo, dy) {
+  if (mo > 3 && mo < 11) return true;
+  if (mo < 3 || mo > 11) return false;
+  // edge months — approximate; conference dates never land here
+  return mo === 3 ? dy >= 8 : dy < 7;
+}
+function toEastern(yr, mo, dy, hh, mm, srcTZ) {
+  const base = TZ_OFFSETS[srcTZ];
+  if (base === undefined) return { yr, mo, dy, hh, mm }; // unknown tz — leave as-is
+  const dst = (srcTZ === 'UTC' || srcTZ === 'GMT') ? 0 : (isUSDST(yr,mo,dy) ? 1 : 0);
+  const srcOffset = base + dst;            // source offset from UTC
+  const eastOffset = -5 + (isUSDST(yr,mo,dy) ? 1 : 0); // Eastern offset from UTC
+  const shift = eastOffset - srcOffset;    // hours to add to reach Eastern
+  const d = new Date(Date.UTC(yr, mo-1, dy, hh, mm));
+  d.setUTCHours(d.getUTCHours() + shift);
+  return { yr:d.getUTCFullYear(), mo:d.getUTCMonth()+1, dy:d.getUTCDate(), hh:d.getUTCHours(), mm:d.getUTCMinutes() };
+}
+
+// ── ICS Parser ───────────────────────────────────────────────────────────────
+function parseICS(raw) {
+  // 1. Unfold folded lines (RFC 5545: CRLF followed by space or tab = continuation)
+  const text = raw.replace(/\r?\n[ \t]/g, '');
+
+  // 2. Isolate the VEVENT block so VTIMEZONE decoy dates can't interfere
+  const veventMatch = text.match(/BEGIN:VEVENT([\s\S]*?)END:VEVENT/);
+  const evt = veventMatch ? veventMatch[1] : text;
+
+  const get = (block, key) => {
+    const m = block.match(new RegExp(key + '[^:\\r\\n]*:([^\\r\\n]+)'));
+    return m ? m[1].trim() : '';
+  };
+
+  const summary = get(evt, 'SUMMARY');
+  const location = get(evt, 'LOCATION');
+  const organizer = (evt.match(/ORGANIZER[^:]*CN=("?)([^":;\r\n]+)\1/)||[])[2]?.trim() || '';
+
+  // 3. DTSTART with a TZID is the real meeting start (inside VEVENT, post-unfold)
+  let dtstartLine = (evt.match(/DTSTART[^:\r\n]*:[^\r\n]+/)||[])[0] || '';
+  let dtstart = get(evt, 'DTSTART;TZID=[^:]*') || get(evt, 'DTSTART');
+  // detect source timezone from the TZID parameter or a trailing Z (UTC)
+  const tzMatch = dtstartLine.match(/TZID="?([^":;]+)"?/);
+  const srcTZ = tzMatch ? tzMatch[1] : (/\dZ\b/.test(dtstartLine) ? 'UTC' : '');
+
+  // 4. Collect attendees, filtering bots and the organizer
+  const emails = [];
+  for (const m of evt.matchAll(/ATTENDEE[^:\r\n]*:mailto:([^\r\n\t ]+)/gi)) {
+    const e = m[1].trim().toLowerCase();
+    if (IGNORE_DOMAINS.some(d => e.includes(d))) continue;
+    if (e.includes('educationweek')) continue;
+    if (!emails.includes(e)) emails.push(e);
+  }
 
   let date = '', time = '';
   if (dtstart) {
-    const c = dtstart.replace(/[TZ]/g,'');
-    if (c.length >= 8) date = c.slice(4,6)+'/'+c.slice(6,8)+'/'+c.slice(0,4);
-    if (c.length >= 14) { let h=parseInt(c.slice(8,10)),mn=c.slice(10,12),ap=h>=12?'PM':'AM'; h=h%12||12; time=h+':'+mn+' '+ap; }
+    const c = dtstart.replace(/[TZ]/g,'').replace(/[^0-9]/g,'');
+    if (c.length >= 12) {
+      const yr=+c.slice(0,4), mo=+c.slice(4,6), dy=+c.slice(6,8), hh=+c.slice(8,10), mm=+c.slice(10,12);
+      // convert source-tz wall-clock to Eastern (conference is all Eastern time)
+      const conv = toEastern(yr, mo, dy, hh, mm, srcTZ);
+      date = String(conv.mo).padStart(2,'0')+'/'+String(conv.dy).padStart(2,'0')+'/'+conv.yr;
+      let h=conv.hh, ap=h>=12?'PM':'AM'; h=h%12||12;
+      time = h+':'+String(conv.mm).padStart(2,'0')+' '+ap+' ET';
+    } else if (c.length >= 8) {
+      date = c.slice(4,6)+'/'+c.slice(6,8)+'/'+c.slice(0,4);
+    }
   }
 
-  const isVirtual = location.includes('teams.microsoft')||location.includes('zoom')||location.includes('meet.google')||summary.toLowerCase().includes('virtual')||summary.toLowerCase().includes('teams');
-  const extEmail = attendees.find(a=>a.includes('@')&&!a.includes('educationweek'));
-  let accountGuess = '';
-  if (extEmail) { const d=extEmail.split('@')[1]?.split('.')[0]||''; accountGuess=d.charAt(0).toUpperCase()+d.slice(1); }
-  if (!accountGuess) { const skip=new Set(['meeting','call','intro','chat','coffee','connect','iste','edweek','virtual','teams','zoom']); accountGuess=summary.split(/[\s\-\/\(\)]+/).filter(w=>w.length>2&&!skip.has(w.toLowerCase())).slice(0,3).join(' '); }
-  const contactGuess = extEmail || (attendees.find(a=>!a.includes('@'))||'');
+  const isVirtual = /teams\.microsoft|zoom\.us|meet\.google/.test(location) || /virtual|teams|zoom/i.test(summary);
 
-  return { date, time, location: isVirtual?'Virtual (Teams)':location, isVirtual, accountGuess, contactGuess };
+  // 5. Account: from external attendee domain, mapped to clean name
+  const extEmail = emails[0] || '';
+  let accountGuess = '';
+  let contactGuess = '';
+  if (extEmail) {
+    const domain = extEmail.split('@')[1]?.split('.')[0] || '';
+    if (DOMAIN_MAP[domain]) accountGuess = DOMAIN_MAP[domain];
+    else if (!GENERIC_DOMAINS.has(domain)) accountGuess = domain.charAt(0).toUpperCase() + domain.slice(1);
+    contactGuess = cleanNameFromEmail(extEmail.split('@')[0]);
+  }
+  // Fallback: pull account from the summary text
+  if (!accountGuess && summary) {
+    const skip = new Set(['meeting','call','intro','chat','coffee','connect','iste','edweek','virtual','teams','zoom','msft','re','fwd']);
+    accountGuess = summary.split(/[\s\-\/\(\)]+/).filter(w=>w.length>2&&!skip.has(w.toLowerCase())).slice(0,3).join(' ');
+  }
+
+  return {
+    date, time,
+    location: isVirtual ? 'Virtual (Teams)' : (location || ''),
+    isVirtual,
+    accountGuess,
+    contactGuess,
+    rep: organizer,
+    matched: !!(DOMAIN_MAP[extEmail.split('@')[1]?.split('.')[0]])
+  };
 }
 
 // ── File handling ────────────────────────────────────────────────────────────
@@ -296,11 +414,15 @@ function readFile(file) {
     document.getElementById('f-date').value = p.date;
     document.getElementById('f-time').value = p.time;
     document.getElementById('f-location').value = p.location;
+    if (p.rep) document.getElementById('f-rep').value = p.rep;
     dropZone.classList.add('parsed');
     document.getElementById('drop-icon').textContent = '✅';
     document.getElementById('drop-text').innerHTML = '<strong>' + file.name + '</strong>';
-    document.getElementById('drop-hint').textContent = 'Details extracted — review and edit below';
+
+    const captured = [p.accountGuess&&'account', p.contactGuess&&'contact', p.date&&'date', p.time&&'time', p.location&&'location', p.rep&&'rep'].filter(Boolean).length;
+    document.getElementById('drop-hint').textContent = captured + ' of 6 fields filled automatically — just check and save';
     document.getElementById('parsed-indicator').style.display = 'block';
+    document.querySelector('.parsed-badge').innerHTML = '✓ Auto-filled from your invite — review and save';
   };
   reader.readAsText(file);
 }
