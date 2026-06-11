@@ -4,6 +4,45 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ISTE 2026 — Meeting Tracker</title>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+  import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc }
+    from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDf89Tv5U_q5P2OA6PSyotbnNsS7kY9GiU",
+    authDomain: "iste-2026-meetings.firebaseapp.com",
+    projectId: "iste-2026-meetings",
+    storageBucket: "iste-2026-meetings.firebasestorage.app",
+    messagingSenderId: "656584348538",
+    appId: "1:656584348538:web:123ff3bc19c5b6850ffcc3"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const col = collection(db, "meetings");
+
+  // Expose a tiny bridge for the main (non-module) script below
+  window.fb = {
+    // Live subscription — fires whenever anyone changes the data
+    subscribe(cb) {
+      onSnapshot(col, snap => {
+        const rows = [];
+        snap.forEach(d => rows.push(d.data()));
+        cb(rows);
+      }, err => console.error("Firestore read error:", err));
+    },
+    async saveMeeting(m) {
+      try { await setDoc(doc(db, "meetings", String(m.id)), m); }
+      catch(e) { console.error("Save error:", e); alert("Could not save — check your connection."); }
+    },
+    async deleteMeeting(id) {
+      try { await deleteDoc(doc(db, "meetings", String(id))); }
+      catch(e) { console.error("Delete error:", e); }
+    }
+  };
+  window.dispatchEvent(new Event("fb-ready"));
+</script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -252,7 +291,6 @@ main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
 <div class="toast" id="toast"></div>
 
 <script>
-const STORAGE_KEY = 'iste2026_v2';
 let meetings = [];
 let activeFilter = 'all';
 let editingId = null;
@@ -268,10 +306,15 @@ function meetingHasPerson(m, person) {
   return ownerFirst === person.toLowerCase();
 }
 
-function load() {
-  try { meetings = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch(e) { meetings = []; }
+// ── Data layer: shared Firestore (via window.fb bridge) ──────────────────────
+// Local mirror of the shared collection; kept in sync by the live subscription.
+function saveMeeting(m) { if (window.fb) window.fb.saveMeeting(m); }
+function deleteMeetingRemote(id) { if (window.fb) window.fb.deleteMeeting(id); }
+// Start listening once the Firebase module signals ready
+function startSync() {
+  if (!window.fb) { window.addEventListener('fb-ready', startSync, { once:true }); return; }
+  window.fb.subscribe(rows => { meetings = rows; render(); });
 }
-function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(meetings)); }
 
 // ── Convert between native input values and stored display formats ───────────
 const DEFAULT_LOCATION = 'Exhibitor Lounge';
@@ -663,20 +706,18 @@ function submitMeeting() {
   const loc = document.getElementById('f-location').value.trim();
   const isVirtual = loc.toLowerCase().includes('virtual')||loc.toLowerCase().includes('teams')||loc.toLowerCase().includes('zoom')||loc.startsWith('http');
 
+  let saved;
   if (editingId) {
-    const idx = meetings.findIndex(x=>x.id===editingId);
-    if (idx > -1) {
-      meetings[idx] = { ...meetings[idx], account, contact: document.getElementById('f-contact').value.trim()||'—', date, time: time||'—', location: loc||'—', rep, isVirtual, notes: document.getElementById('f-notes').value.trim(), updatedAt: new Date().toISOString() };
-      showToast('Meeting updated ✓', true);
-    }
+    const existing = meetings.find(x=>x.id===editingId) || {};
+    saved = { ...existing, id: editingId, account, contact: document.getElementById('f-contact').value.trim()||'—', date, time: time||'—', location: loc||'—', rep, isVirtual, notes: document.getElementById('f-notes').value.trim(), updatedAt: new Date().toISOString() };
+    showToast('Meeting updated ✓', true);
   } else {
-    meetings.unshift({ id: Date.now(), account, contact: document.getElementById('f-contact').value.trim()||'—', date, time: time||'—', location: loc||'—', rep, isVirtual, notes: document.getElementById('f-notes').value.trim(), loggedAt: new Date().toISOString() });
+    saved = { id: Date.now(), account, contact: document.getElementById('f-contact').value.trim()||'—', date, time: time||'—', location: loc||'—', rep, isVirtual, notes: document.getElementById('f-notes').value.trim(), loggedAt: new Date().toISOString() };
     showToast('Meeting with ' + account + ' logged ✓', true);
   }
 
-  save();
+  saveMeeting(saved);
   closeModal();
-  render();
 }
 
 // ── Delete ───────────────────────────────────────────────────────────────────
@@ -688,8 +729,8 @@ function openDeleteConfirm(id) {
 }
 function closeConfirm() { document.getElementById('confirm-overlay').classList.remove('open'); deletingId = null; }
 function confirmDelete() {
-  meetings = meetings.filter(x=>x.id!==deletingId);
-  save(); closeConfirm(); render();
+  deleteMeetingRemote(deletingId);
+  closeConfirm();
   showToast('Meeting removed', true);
 }
 
@@ -813,8 +854,8 @@ function showToast(msg, success=true) {
 
 populateTimeOptions();
 populateDateOptions();
-load(); render();
-setInterval(()=>{ load(); render(); }, 30000);
+render();
+startSync();
 </script>
 </body>
 </html>
