@@ -224,7 +224,7 @@ main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
         <div class="form-field full"><label>Account / Company *</label><input type="text" id="f-account" placeholder="e.g. GoGuardian"></div>
         <div class="form-field full"><label>Contact name</label><input type="text" id="f-contact" placeholder="e.g. Jane Smith, VP Marketing"></div>
         <div class="form-field"><label>Date *</label><input type="date" id="f-date"></div>
-        <div class="form-field"><label>Time</label><input type="time" id="f-time" step="900"></div>
+        <div class="form-field"><label>Time</label><select id="f-time"><option value="">Select…</option></select></div>
         <div class="form-field full"><label>Location / Booth</label><input type="text" id="f-location" placeholder="Exhibitor Lounge or client's booth"></div>
         <div class="form-field full"><label>Meeting owner (rep) *</label><input type="text" id="f-rep" placeholder="e.g. Josh Ford"></div>
         <div class="form-field full"><label>Notes <span style="text-transform:none;font-weight:400;color:var(--text-light);">— add any extra attendees here</span></label><input type="text" id="f-notes" placeholder="e.g. Bring deck. Holly + Editorial joining."></div>
@@ -297,6 +297,33 @@ function timeFromInput(hhmm) {
   if (!m) return '';
   let h = +m[1]; const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
   return `${h}:${m[2]} ${ap} ET`;
+}
+// Populate the time dropdown with quarter-hour options (7 AM – 8 PM)
+function populateTimeOptions() {
+  const sel = document.getElementById('f-time');
+  if (!sel || sel.dataset.filled) return;
+  let opts = '<option value="">Select…</option>';
+  for (let h = 7; h <= 20; h++) {
+    for (const mn of ['00','15','30','45']) {
+      const val = String(h).padStart(2,'0') + ':' + mn;
+      let dh = h % 12 || 12, ap = h >= 12 ? 'PM' : 'AM';
+      opts += `<option value="${val}">${dh}:${mn} ${ap}</option>`;
+    }
+  }
+  sel.innerHTML = opts;
+  sel.dataset.filled = '1';
+}
+// Set the time field, adding an off-grid option if a parsed invite isn't on a quarter-hour
+function setTimeField(hhmm) {
+  const sel = document.getElementById('f-time');
+  if (!hhmm) { sel.value = ''; return; }
+  if (![...sel.options].some(o => o.value === hhmm)) {
+    const m = hhmm.match(/(\d{1,2}):(\d{2})/);
+    let dh = (+m[1]) % 12 || 12, ap = (+m[1]) >= 12 ? 'PM' : 'AM';
+    const opt = new Option(`${dh}:${m[2]} ${ap}`, hhmm);
+    sel.add(opt);
+  }
+  sel.value = hhmm;
 }
 
 // ── Domain → clean account name lookup (Josh's known targets) ─────────────────
@@ -561,7 +588,7 @@ function applyParsed(p, file) {
   document.getElementById('f-account').value = p.accountGuess;
   document.getElementById('f-contact').value = p.contactGuess;
   document.getElementById('f-date').value = dateToInput(p.date);
-  document.getElementById('f-time').value = timeToInput(p.time);
+  setTimeField(timeToInput(p.time));
   document.getElementById('f-location').value = p.location || DEFAULT_LOCATION;
   if (p.rep) document.getElementById('f-rep').value = p.rep;
   dropZone.classList.add('parsed');
@@ -593,7 +620,7 @@ function openModal(id) {
       document.getElementById('f-account').value = m.account;
       document.getElementById('f-contact').value = m.contact === '—' ? '' : m.contact;
       document.getElementById('f-date').value = dateToInput(m.date);
-      document.getElementById('f-time').value = timeToInput(m.time);
+      setTimeField(timeToInput(m.time));
       document.getElementById('f-location').value = m.location === '—' ? '' : m.location;
       document.getElementById('f-rep').value = m.rep;
       document.getElementById('f-notes').value = m.notes || '';
@@ -768,6 +795,7 @@ function showToast(msg, success=true) {
   setTimeout(()=>t.className='toast',3000);
 }
 
+populateTimeOptions();
 load(); render();
 setInterval(()=>{ load(); render(); }, 30000);
 </script>
