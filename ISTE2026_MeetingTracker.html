@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ISTE 2026 — Meeting Tracker</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --navy: #1a2e4a;
+  --navy-mid: #2a4a6b;
+  --accent: #e8354a;
+  --accent-soft: #fdeced;
+  --blue-soft: #eef4fb;
+  --green: #1a7a4a;
+  --green-soft: #e8f5ee;
+  --text: #1a1a2e;
+  --text-mid: #4a5568;
+  --text-light: #8a96a8;
+  --border: #e2e8f0;
+  --bg: #f7f9fc;
+  --white: #ffffff;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.10);
+}
+
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 15px; line-height: 1.5; }
+
+header { background: var(--navy); color: white; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; height: 60px; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+.logo { display: flex; align-items: center; gap: 12px; }
+.logo-mark { background: var(--accent); color: white; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; padding: 4px 8px; border-radius: 5px; }
+.logo-text { font-size: 15px; font-weight: 600; opacity: 0.95; }
+.logo-sub { font-size: 12px; opacity: 0.55; margin-left: 4px; }
+.header-right { display: flex; align-items: center; gap: 10px; }
+.btn-log { background: var(--accent); color: white; border: none; border-radius: var(--radius); padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: opacity 0.15s; }
+.btn-log:hover { opacity: 0.88; }
+.live-dot { width: 7px; height: 7px; background: #4ade80; border-radius: 50%; display: inline-block; animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
+
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 28px; }
+.stat-card { background: var(--white); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 20px; box-shadow: var(--shadow); }
+.stat-label { font-size: 11px; font-weight: 600; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 6px; }
+.stat-value { font-size: 28px; font-weight: 700; color: var(--navy); line-height: 1; }
+.stat-sub { font-size: 12px; color: var(--text-light); margin-top: 4px; }
+
+.section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; flex-wrap: wrap; gap: 8px; }
+.section-title { font-size: 13px; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.08em; }
+.filter-group { display: flex; gap: 8px; flex-wrap: wrap; }
+.filter-btn { background: var(--white); border: 1px solid var(--border); border-radius: 99px; padding: 4px 12px; font-size: 12px; color: var(--text-mid); cursor: pointer; transition: all 0.15s; }
+.filter-btn:hover { border-color: var(--navy-mid); color: var(--navy); }
+.filter-btn.active { background: var(--navy); color: white; border-color: var(--navy); }
+
+.meeting-grid { display: flex; flex-direction: column; gap: 8px; }
+
+.meeting-card { background: var(--white); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px 20px; display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: start; box-shadow: var(--shadow); transition: box-shadow 0.15s; }
+.meeting-card:hover { box-shadow: var(--shadow-md); }
+.meeting-card.virtual { border-left: 3px solid #5b8def; }
+.meeting-card.in-person { border-left: 3px solid var(--green); }
+
+.card-left { display: flex; flex-direction: column; gap: 6px; }
+.card-account { font-size: 16px; font-weight: 700; color: var(--navy); }
+.card-contact { font-size: 13px; color: var(--text-mid); }
+.card-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+.meta-pill { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-mid); background: var(--bg); border: 1px solid var(--border); border-radius: 99px; padding: 3px 10px; }
+
+.card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.rep-badge { font-size: 12px; font-weight: 600; background: var(--blue-soft); color: var(--navy-mid); border-radius: 99px; padding: 4px 12px; white-space: nowrap; }
+.type-badge { font-size: 11px; border-radius: 99px; padding: 3px 10px; font-weight: 600; }
+.type-badge.virtual { background: #ebf0fd; color: #3b5bdb; }
+.type-badge.in-person { background: var(--green-soft); color: var(--green); }
+
+.card-actions { display: flex; gap: 6px; margin-top: 4px; }
+.btn-edit, .btn-delete { border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 11px; font-size: 12px; cursor: pointer; transition: all 0.15s; background: var(--white); }
+.btn-edit { color: var(--navy-mid); }
+.btn-edit:hover { background: var(--blue-soft); border-color: var(--navy-mid); }
+.btn-delete { color: var(--accent); }
+.btn-delete:hover { background: var(--accent-soft); border-color: var(--accent); }
+
+.empty { text-align: center; padding: 60px 20px; color: var(--text-light); }
+.empty-icon { font-size: 40px; margin-bottom: 12px; }
+.empty h3 { font-size: 16px; color: var(--text-mid); margin-bottom: 6px; }
+.empty p { font-size: 13px; }
+
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(10,20,40,0.55); z-index: 200; align-items: center; justify-content: center; padding: 20px; }
+.modal-overlay.open { display: flex; }
+.modal { background: var(--white); border-radius: var(--radius-lg); width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.25); }
+.modal-header { background: var(--navy); color: white; padding: 20px 24px; border-radius: var(--radius-lg) var(--radius-lg) 0 0; display: flex; align-items: center; justify-content: space-between; }
+.modal-header h2 { font-size: 16px; font-weight: 700; }
+.modal-header p { font-size: 12px; opacity: 0.65; margin-top: 2px; }
+.close-btn { background: rgba(255,255,255,0.15); border: none; color: white; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: background 0.15s; }
+.close-btn:hover { background: rgba(255,255,255,0.25); }
+.modal-body { padding: 24px; }
+
+.drop-zone { border: 2px dashed var(--border); border-radius: var(--radius-lg); padding: 28px 20px; text-align: center; cursor: pointer; transition: all 0.15s; margin-bottom: 20px; background: var(--bg); }
+.drop-zone:hover, .drop-zone.drag { border-color: var(--navy-mid); background: var(--blue-soft); }
+.drop-zone.parsed { border-color: var(--green); border-style: solid; background: var(--green-soft); }
+.drop-zone.hidden { display: none; }
+.drop-icon { font-size: 28px; margin-bottom: 8px; }
+.drop-zone p { font-size: 14px; color: var(--text-mid); }
+.drop-zone strong { color: var(--navy); }
+.drop-zone .hint { font-size: 12px; color: var(--text-light); margin-top: 4px; }
+.drop-zone input[type=file] { display: none; }
+
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
+.form-field { display: flex; flex-direction: column; gap: 5px; }
+.form-field.full { grid-column: 1 / -1; }
+.form-field label { font-size: 12px; font-weight: 600; color: var(--text-mid); text-transform: uppercase; letter-spacing: 0.05em; }
+.form-field input, .form-field select { border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 12px; font-size: 14px; color: var(--text); background: var(--white); outline: none; transition: border-color 0.15s; width: 100%; }
+.form-field input:focus, .form-field select:focus { border-color: var(--navy-mid); }
+
+.parsed-badge { display: inline-flex; align-items: center; gap: 5px; background: var(--green-soft); color: var(--green); font-size: 12px; font-weight: 600; border-radius: 99px; padding: 4px 12px; margin-bottom: 16px; }
+
+.form-actions { display: flex; gap: 10px; }
+.btn-submit { flex: 1; background: var(--navy); color: white; border: none; border-radius: var(--radius); padding: 12px; font-size: 14px; font-weight: 700; cursor: pointer; transition: opacity 0.15s; }
+.btn-submit:hover { opacity: 0.88; }
+.btn-cancel { background: transparent; border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 20px; font-size: 14px; color: var(--text-mid); cursor: pointer; transition: background 0.15s; }
+.btn-cancel:hover { background: var(--bg); }
+
+.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--navy); color: white; padding: 12px 20px; border-radius: var(--radius); font-size: 14px; font-weight: 500; box-shadow: var(--shadow-md); opacity: 0; transition: all 0.25s; z-index: 300; white-space: nowrap; pointer-events: none; }
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.success { border-left: 4px solid #4ade80; }
+
+.day-divider { font-size: 12px; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.07em; padding: 8px 0 4px; border-bottom: 1px solid var(--border); margin: 16px 0 8px; }
+.day-divider:first-child { margin-top: 0; }
+
+.btn-export { background: transparent; border: 1px solid rgba(255,255,255,0.25); color: rgba(255,255,255,0.8); border-radius: var(--radius); padding: 7px 13px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.15s; }
+.btn-export:hover { background: rgba(255,255,255,0.1); color: white; }
+
+.confirm-overlay { display: none; position: fixed; inset: 0; background: rgba(10,20,40,0.55); z-index: 300; align-items: center; justify-content: center; padding: 20px; }
+.confirm-overlay.open { display: flex; }
+.confirm-box { background: var(--white); border-radius: var(--radius-lg); padding: 28px; max-width: 380px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.25); text-align: center; }
+.confirm-box h3 { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+.confirm-box p { font-size: 14px; color: var(--text-mid); margin-bottom: 24px; }
+.confirm-actions { display: flex; gap: 10px; }
+.btn-confirm-delete { flex: 1; background: var(--accent); color: white; border: none; border-radius: var(--radius); padding: 11px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn-confirm-cancel { flex: 1; background: transparent; border: 1px solid var(--border); border-radius: var(--radius); padding: 11px; font-size: 14px; color: var(--text-mid); cursor: pointer; }
+
+@media (max-width: 600px) {
+  header { padding: 0 16px; }
+  main { padding: 20px 16px; }
+  .logo-sub { display: none; }
+  .form-grid { grid-template-columns: 1fr; }
+  .meeting-card { grid-template-columns: 1fr; }
+  .card-right { flex-direction: row; align-items: center; flex-wrap: wrap; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <span class="logo-mark">EDWEEK</span>
+    <span class="logo-text">ISTE 2026 <span class="logo-sub">· Orlando</span></span>
+  </div>
+  <div class="header-right">
+    <span style="font-size:12px;color:rgba(255,255,255,0.5);display:flex;align-items:center;gap:6px;">
+      <span class="live-dot"></span> Live
+    </span>
+    <button class="btn-export" onclick="exportCSV()">⬇ Export</button>
+    <button class="btn-log" onclick="openModal()">+ Log meeting</button>
+  </div>
+</header>
+
+<main>
+  <div class="stats">
+    <div class="stat-card"><div class="stat-label">Total meetings</div><div class="stat-value" id="stat-total">0</div><div class="stat-sub">logged so far</div></div>
+    <div class="stat-card"><div class="stat-label">Today</div><div class="stat-value" id="stat-today">0</div><div class="stat-sub" id="stat-today-date">—</div></div>
+    <div class="stat-card"><div class="stat-label">Reps active</div><div class="stat-value" id="stat-reps">0</div><div class="stat-sub">team members</div></div>
+    <div class="stat-card"><div class="stat-label">Virtual</div><div class="stat-value" id="stat-virtual">0</div><div class="stat-sub">remote meetings</div></div>
+  </div>
+
+  <div class="section-header">
+    <span class="section-title">All meetings</span>
+    <div class="filter-group" id="rep-filters"></div>
+  </div>
+
+  <div class="meeting-grid" id="meeting-grid">
+    <div class="empty" id="empty-state">
+      <div class="empty-icon">📅</div>
+      <h3>No meetings logged yet</h3>
+      <p>Click "Log meeting" and upload your .ics file — takes about 10 seconds.</p>
+    </div>
+  </div>
+</main>
+
+<!-- Log / Edit Modal -->
+<div class="modal-overlay" id="modal" role="dialog" aria-modal="true">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <h2 id="modal-title">Log a meeting</h2>
+        <p id="modal-subtitle">Upload your .ics file — we'll fill in the details automatically</p>
+      </div>
+      <button class="close-btn" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="drop-zone" id="drop-zone" onclick="document.getElementById('ics-input').click()">
+        <input type="file" id="ics-input" accept=".ics">
+        <div class="drop-icon" id="drop-icon">📎</div>
+        <p id="drop-text"><strong>Drop your .ics file here</strong> or click to browse</p>
+        <p class="hint" id="drop-hint">Save the calendar attachment from your Yesware booking email, then upload it here</p>
+      </div>
+      <div id="parsed-indicator" style="display:none; margin-bottom:16px;">
+        <span class="parsed-badge">✓ Parsed from .ics — review and confirm below</span>
+      </div>
+      <div class="form-grid">
+        <div class="form-field full"><label>Account / Company *</label><input type="text" id="f-account" placeholder="e.g. GoGuardian"></div>
+        <div class="form-field full"><label>Contact name</label><input type="text" id="f-contact" placeholder="e.g. Jane Smith, VP Marketing"></div>
+        <div class="form-field"><label>Date *</label><input type="text" id="f-date" placeholder="e.g. 06/29/2026"></div>
+        <div class="form-field"><label>Time</label><input type="text" id="f-time" placeholder="e.g. 10:00 AM PT"></div>
+        <div class="form-field full"><label>Location / Booth</label><input type="text" id="f-location" placeholder="e.g. Booth 1412, Coffee bar, or Virtual"></div>
+        <div class="form-field full"><label>Your name (rep) *</label><input type="text" id="f-rep" placeholder="e.g. Josh Ford"></div>
+        <div class="form-field full"><label>Notes</label><input type="text" id="f-notes" placeholder="e.g. Bring proposal deck, confirm exec joining"></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+        <button class="btn-submit" id="submit-btn" onclick="submitMeeting()">Log this meeting →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Confirm -->
+<div class="confirm-overlay" id="confirm-overlay">
+  <div class="confirm-box">
+    <h3>Delete this meeting?</h3>
+    <p id="confirm-text">This can't be undone.</p>
+    <div class="confirm-actions">
+      <button class="btn-confirm-cancel" onclick="closeConfirm()">Cancel</button>
+      <button class="btn-confirm-delete" onclick="confirmDelete()">Yes, delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const STORAGE_KEY = 'iste2026_v2';
+let meetings = [];
+let activeFilter = 'all';
+let editingId = null;
+let deletingId = null;
+
+function load() {
+  try { meetings = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch(e) { meetings = []; }
+}
+function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(meetings)); }
+
+// ── ICS Parser ───────────────────────────────────────────────────────────────
+function parseICS(text) {
+  const get = key => { const m = text.match(new RegExp(key + '[^:\\r\\n]*:([^\\r\\n]+)')); return m ? m[1].trim() : ''; };
+  const summary = get('SUMMARY(?:;[^:]*)?' );
+  const dtstart = get('DTSTART(?:;[^:]*)?');
+  const location = get('LOCATION');
+
+  const attendees = [];
+  for (const m of text.matchAll(/ATTENDEE[^:]*CN="?([^":;\r\n]+)"?/g)) { const n = m[1].trim(); if(n && !n.includes('@') && !attendees.includes(n)) attendees.push(n); }
+  for (const m of text.matchAll(/ATTENDEE[^:\r\n]*:mailto:([^\r\n\t ]+)/g)) { const e = m[1].trim(); if(!attendees.includes(e)) attendees.push(e); }
+
+  let date = '', time = '';
+  if (dtstart) {
+    const c = dtstart.replace(/[TZ]/g,'');
+    if (c.length >= 8) date = c.slice(4,6)+'/'+c.slice(6,8)+'/'+c.slice(0,4);
+    if (c.length >= 14) { let h=parseInt(c.slice(8,10)),mn=c.slice(10,12),ap=h>=12?'PM':'AM'; h=h%12||12; time=h+':'+mn+' '+ap; }
+  }
+
+  const isVirtual = location.includes('teams.microsoft')||location.includes('zoom')||location.includes('meet.google')||summary.toLowerCase().includes('virtual')||summary.toLowerCase().includes('teams');
+  const extEmail = attendees.find(a=>a.includes('@')&&!a.includes('educationweek'));
+  let accountGuess = '';
+  if (extEmail) { const d=extEmail.split('@')[1]?.split('.')[0]||''; accountGuess=d.charAt(0).toUpperCase()+d.slice(1); }
+  if (!accountGuess) { const skip=new Set(['meeting','call','intro','chat','coffee','connect','iste','edweek','virtual','teams','zoom']); accountGuess=summary.split(/[\s\-\/\(\)]+/).filter(w=>w.length>2&&!skip.has(w.toLowerCase())).slice(0,3).join(' '); }
+  const contactGuess = extEmail || (attendees.find(a=>!a.includes('@'))||'');
+
+  return { date, time, location: isVirtual?'Virtual (Teams)':location, isVirtual, accountGuess, contactGuess };
+}
+
+// ── File handling ────────────────────────────────────────────────────────────
+const dropZone = document.getElementById('drop-zone');
+const icsInput = document.getElementById('ics-input');
+dropZone.addEventListener('dragover', e=>{e.preventDefault();dropZone.classList.add('drag');});
+dropZone.addEventListener('dragleave', ()=>dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e=>{e.preventDefault();dropZone.classList.remove('drag');if(e.dataTransfer.files[0])readFile(e.dataTransfer.files[0]);});
+icsInput.addEventListener('change', e=>{if(e.target.files[0])readFile(e.target.files[0]);});
+
+function readFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const p = parseICS(e.target.result);
+    document.getElementById('f-account').value = p.accountGuess;
+    document.getElementById('f-contact').value = p.contactGuess;
+    document.getElementById('f-date').value = p.date;
+    document.getElementById('f-time').value = p.time;
+    document.getElementById('f-location').value = p.location;
+    dropZone.classList.add('parsed');
+    document.getElementById('drop-icon').textContent = '✅';
+    document.getElementById('drop-text').innerHTML = '<strong>' + file.name + '</strong>';
+    document.getElementById('drop-hint').textContent = 'Details extracted — review and edit below';
+    document.getElementById('parsed-indicator').style.display = 'block';
+  };
+  reader.readAsText(file);
+}
+
+// ── Modal ────────────────────────────────────────────────────────────────────
+function openModal(id) {
+  editingId = id || null;
+  const isEdit = !!editingId;
+  document.getElementById('modal-title').textContent = isEdit ? 'Edit meeting' : 'Log a meeting';
+  document.getElementById('modal-subtitle').textContent = isEdit ? 'Update the details below' : 'Upload your .ics file — we\'ll fill in the details automatically';
+  document.getElementById('submit-btn').textContent = isEdit ? 'Save changes →' : 'Log this meeting →';
+  document.getElementById('drop-zone').classList.toggle('hidden', isEdit);
+  document.getElementById('parsed-indicator').style.display = 'none';
+
+  if (isEdit) {
+    const m = meetings.find(x=>x.id===editingId);
+    if (m) {
+      document.getElementById('f-account').value = m.account;
+      document.getElementById('f-contact').value = m.contact === '—' ? '' : m.contact;
+      document.getElementById('f-date').value = m.date;
+      document.getElementById('f-time').value = m.time === '—' ? '' : m.time;
+      document.getElementById('f-location').value = m.location === '—' ? '' : m.location;
+      document.getElementById('f-rep').value = m.rep;
+      document.getElementById('f-notes').value = m.notes || '';
+    }
+  }
+
+  document.getElementById('modal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('open');
+  document.body.style.overflow = '';
+  editingId = null;
+  resetForm();
+}
+
+function resetForm() {
+  ['f-account','f-contact','f-date','f-time','f-location','f-rep','f-notes'].forEach(id=>document.getElementById(id).value='');
+  dropZone.classList.remove('parsed','drag','hidden');
+  document.getElementById('drop-icon').textContent='📎';
+  document.getElementById('drop-text').innerHTML='<strong>Drop your .ics file here</strong> or click to browse';
+  document.getElementById('drop-hint').textContent='Save the calendar attachment from your Yesware booking email, then upload it here';
+  document.getElementById('parsed-indicator').style.display='none';
+  icsInput.value='';
+}
+
+document.getElementById('modal').addEventListener('click', e=>{if(e.target===document.getElementById('modal'))closeModal();});
+
+// ── Submit ───────────────────────────────────────────────────────────────────
+function submitMeeting() {
+  const account = document.getElementById('f-account').value.trim();
+  const rep = document.getElementById('f-rep').value.trim();
+  const date = document.getElementById('f-date').value.trim();
+  if (!account||!rep||!date) { showToast('Please fill in Account, Rep, and Date','error'); return; }
+
+  const loc = document.getElementById('f-location').value.trim();
+  const isVirtual = loc.toLowerCase().includes('virtual')||loc.toLowerCase().includes('teams')||loc.toLowerCase().includes('zoom')||loc.startsWith('http');
+
+  if (editingId) {
+    const idx = meetings.findIndex(x=>x.id===editingId);
+    if (idx > -1) {
+      meetings[idx] = { ...meetings[idx], account, contact: document.getElementById('f-contact').value.trim()||'—', date, time: document.getElementById('f-time').value.trim()||'—', location: loc||'—', rep, isVirtual, notes: document.getElementById('f-notes').value.trim(), updatedAt: new Date().toISOString() };
+      showToast('Meeting updated ✓', true);
+    }
+  } else {
+    meetings.unshift({ id: Date.now(), account, contact: document.getElementById('f-contact').value.trim()||'—', date, time: document.getElementById('f-time').value.trim()||'—', location: loc||'—', rep, isVirtual, notes: document.getElementById('f-notes').value.trim(), loggedAt: new Date().toISOString() });
+    showToast('Meeting with ' + account + ' logged ✓', true);
+  }
+
+  save();
+  closeModal();
+  render();
+}
+
+// ── Delete ───────────────────────────────────────────────────────────────────
+function openDeleteConfirm(id) {
+  deletingId = id;
+  const m = meetings.find(x=>x.id===id);
+  document.getElementById('confirm-text').textContent = m ? 'Remove meeting with ' + m.account + '?' : 'This can\'t be undone.';
+  document.getElementById('confirm-overlay').classList.add('open');
+}
+function closeConfirm() { document.getElementById('confirm-overlay').classList.remove('open'); deletingId = null; }
+function confirmDelete() {
+  meetings = meetings.filter(x=>x.id!==deletingId);
+  save(); closeConfirm(); render();
+  showToast('Meeting removed', true);
+}
+
+// ── Render ───────────────────────────────────────────────────────────────────
+function render() {
+  const grid = document.getElementById('meeting-grid');
+  const todayStr = new Date().toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'});
+  const todayCount = meetings.filter(m=>m.date===todayStr).length;
+  const reps = new Set(meetings.map(m=>m.rep));
+
+  document.getElementById('stat-total').textContent = meetings.length;
+  document.getElementById('stat-today').textContent = todayCount;
+  document.getElementById('stat-today-date').textContent = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  document.getElementById('stat-reps').textContent = reps.size;
+  document.getElementById('stat-virtual').textContent = meetings.filter(m=>m.isVirtual).length;
+
+  const filterWrap = document.getElementById('rep-filters');
+  filterWrap.innerHTML = `<button class="filter-btn ${activeFilter==='all'?'active':''}" onclick="setFilter('all')">All</button>` +
+    [...reps].map(r=>`<button class="filter-btn ${activeFilter===r?'active':''}" onclick="setFilter(${JSON.stringify(r)})">${r.split(' ')[0]}</button>`).join('');
+
+  const filtered = activeFilter==='all' ? meetings : meetings.filter(m=>m.rep===activeFilter);
+
+  if (!filtered.length) {
+    grid.innerHTML = `<div class="empty" id="empty-state"><div class="empty-icon">📅</div><h3>No meetings logged yet</h3><p>Click "Log meeting" and upload your .ics file — takes about 10 seconds.</p></div>`;
+    return;
+  }
+
+  const byDate = {};
+  filtered.forEach(m=>{ (byDate[m.date]=byDate[m.date]||[]).push(m); });
+
+  grid.innerHTML = Object.entries(byDate).map(([date,items])=>{
+    const label = formatDateLabel(date);
+    const cards = items.map(m=>`
+      <div class="meeting-card ${m.isVirtual?'virtual':'in-person'}">
+        <div class="card-left">
+          <div class="card-account">${m.account}</div>
+          <div class="card-contact">👤 ${m.contact}</div>
+          <div class="card-meta">
+            <span class="meta-pill">🕐 ${m.time}</span>
+            <span class="meta-pill">📍 ${m.location}</span>
+          </div>
+          ${m.notes?`<div style="font-size:12px;color:var(--text-light);margin-top:4px;">📝 ${m.notes}</div>`:''}
+          <div class="card-actions">
+            <button class="btn-edit" onclick="openModal(${m.id})">✏️ Edit</button>
+            <button class="btn-delete" onclick="openDeleteConfirm(${m.id})">✕ Remove</button>
+          </div>
+        </div>
+        <div class="card-right">
+          <span class="rep-badge">${m.rep}</span>
+          <span class="type-badge ${m.isVirtual?'virtual':'in-person'}">${m.isVirtual?'Virtual':'In person'}</span>
+        </div>
+      </div>`).join('');
+    return `<div class="day-divider">${label} · ${items.length} meeting${items.length!==1?'s':''}</div>${cards}`;
+  }).join('');
+}
+
+function formatDateLabel(d) {
+  try { const [mo,dy,y]=d.split('/'); return new Date(+y,+mo-1,+dy).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}); } catch(e){ return d; }
+}
+function setFilter(r) { activeFilter=r; render(); }
+
+// ── Export ───────────────────────────────────────────────────────────────────
+function exportCSV() {
+  if (!meetings.length) { showToast('No meetings to export','error'); return; }
+  const rows=[['Account','Contact','Date','Time','Location','Rep','Virtual','Notes','Logged At']];
+  meetings.forEach(m=>rows.push([m.account,m.contact,m.date,m.time,m.location,m.rep,m.isVirtual?'Yes':'No',m.notes||'',m.loggedAt]));
+  const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a'); a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv); a.download='ISTE2026_meetings.csv'; a.click();
+  showToast('CSV downloaded ✓', true);
+}
+
+// ── Toast ────────────────────────────────────────────────────────────────────
+function showToast(msg, success=true) {
+  const t=document.getElementById('toast'); t.textContent=msg;
+  t.className='toast show'+(success?' success':'');
+  setTimeout(()=>t.className='toast',3000);
+}
+
+load(); render();
+setInterval(()=>{ load(); render(); }, 30000);
+</script>
+</body>
+</html>
