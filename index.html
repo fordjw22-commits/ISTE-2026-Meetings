@@ -89,6 +89,7 @@ main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
 
 .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; flex-wrap: wrap; gap: 8px; }
 .section-title { font-size: 13px; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.08em; }
+#stat-total-inline { display: inline-block; margin-left: 4px; font-size: 11px; font-weight: 600; color: var(--text-mid); background: var(--bg); border: 1px solid var(--border); border-radius: 99px; padding: 1px 9px; letter-spacing: 0; }
 .filter-group { display: flex; gap: 8px; flex-wrap: wrap; }
 .filter-btn { background: var(--white); border: 1px solid var(--border); border-radius: 99px; padding: 4px 12px; font-size: 12px; color: var(--text-mid); cursor: pointer; transition: all 0.15s; }
 .filter-btn:hover { border-color: var(--navy-mid); color: var(--navy); }
@@ -218,15 +219,8 @@ main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
 </header>
 
 <main>
-  <div class="stats">
-    <div class="stat-card"><div class="stat-label">Total meetings</div><div class="stat-value" id="stat-total">0</div><div class="stat-sub">logged so far</div></div>
-    <div class="stat-card"><div class="stat-label">Today</div><div class="stat-value" id="stat-today">0</div><div class="stat-sub" id="stat-today-date">—</div></div>
-    <div class="stat-card"><div class="stat-label">Reps active</div><div class="stat-value" id="stat-reps">0</div><div class="stat-sub">team members</div></div>
-    <div class="stat-card"><div class="stat-label">Virtual</div><div class="stat-value" id="stat-virtual">0</div><div class="stat-sub">remote meetings</div></div>
-  </div>
-
   <div class="section-header">
-    <span class="section-title">All meetings</span>
+    <span class="section-title">All meetings <span id="stat-total-inline">0</span></span>
     <div class="filter-group" id="rep-filters"></div>
   </div>
 
@@ -859,14 +853,8 @@ function cardHTML(m) {
 
 function render() {
   const grid = document.getElementById('meeting-grid');
-  const reps = new Set(meetings.map(m=>m.rep));
 
-  document.getElementById('stat-total').textContent = meetings.length;
-  const todayStr = new Date().toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'});
-  document.getElementById('stat-today').textContent = meetings.filter(m=>m.date===todayStr).length;
-  document.getElementById('stat-today-date').textContent = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'});
-  document.getElementById('stat-reps').textContent = reps.size;
-  document.getElementById('stat-virtual').textContent = meetings.filter(m=>m.isVirtual).length;
+  document.getElementById('stat-total-inline').textContent = meetings.length;
 
   const filterWrap = document.getElementById('rep-filters');
   filterWrap.innerHTML = `<button class="filter-btn ${activeFilter==='all'?'active':''}" onclick="setFilter('all')">All</button>` +
