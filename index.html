@@ -89,11 +89,19 @@ main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
 
 .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; flex-wrap: wrap; gap: 8px; }
 .section-title { font-size: 13px; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.08em; }
+.drop-callout { display: flex; align-items: center; gap: 16px; background: var(--blue-soft); border: 1.5px dashed var(--navy-mid); border-radius: var(--radius-lg); padding: 16px 20px; margin-bottom: 24px; cursor: pointer; transition: background 0.15s; }
+.drop-callout:hover { background: #e3ecf9; }
+.drop-callout-icon { font-size: 30px; flex-shrink: 0; }
+.drop-callout-text { display: flex; flex-direction: column; gap: 2px; }
+.drop-callout-text strong { font-size: 15px; color: var(--navy); font-weight: 700; }
+.drop-callout-text span { font-size: 13px; color: var(--text-mid); }
+@media (max-width: 600px) { .drop-callout { padding: 14px 16px; gap: 12px; } .drop-callout-icon { font-size: 24px; } }
 #stat-total-inline { display: inline-block; margin-left: 4px; font-size: 11px; font-weight: 600; color: var(--text-mid); background: var(--bg); border: 1px solid var(--border); border-radius: 99px; padding: 1px 9px; letter-spacing: 0; }
 .filter-group { display: flex; gap: 8px; flex-wrap: wrap; }
 .filter-btn { background: var(--white); border: 1px solid var(--border); border-radius: 99px; padding: 4px 12px; font-size: 12px; color: var(--text-mid); cursor: pointer; transition: all 0.15s; }
 .filter-btn:hover { border-color: var(--navy-mid); color: var(--navy); }
 .filter-btn.active { background: var(--navy); color: white; border-color: var(--navy); }
+.chip-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
 
 .meeting-grid { display: flex; flex-direction: column; gap: 8px; }
 
@@ -222,7 +230,7 @@ main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
     </span>
     <button class="btn-export" onclick="copySummary()">📋 Copy summary</button>
     <button class="btn-export" onclick="exportCSV()">⬇ Export</button>
-    <button class="btn-log" onclick="openModal()">+ Log meeting</button>
+    <button class="btn-log" onclick="openModal()">+ Manually add meeting</button>
   </div>
 </header>
 
@@ -236,6 +244,15 @@ main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
 
 
 <main>
+  <div class="drop-callout" onclick="document.getElementById('callout-input').click()">
+    <input type="file" id="callout-input" accept=".ics,.msg" multiple style="display:none">
+    <div class="drop-callout-icon">📥</div>
+    <div class="drop-callout-text">
+      <strong>Drag &amp; drop your accepted meeting invite here</strong>
+      <span>Drop an .ics or .msg file anywhere on this page (or click to browse) and it logs instantly — account, contact, date &amp; time auto-filled. No typing needed.</span>
+    </div>
+  </div>
+
   <div class="section-header">
     <span class="section-title">All meetings <span id="stat-total-inline">0</span></span>
     <div class="filter-group" id="rep-filters"></div>
@@ -309,8 +326,17 @@ let deletingId = null;
 
 // ── AMS reps (meeting owners) ────────────────────────────────────────────────
 const TEAM = [
-  { name: 'Guy' }, { name: 'Julie' }, { name: 'Valerie' }, { name: 'Josh' }, { name: 'Daniel' }
+  { name: 'Guy',     bg: '#e3edf9', fg: '#1f4e79' },
+  { name: 'Julie',   bg: '#e4f1e8', fg: '#1a6e44' },
+  { name: 'Valerie', bg: '#efe6f6', fg: '#6a3a99' },
+  { name: 'Josh',    bg: '#f7ead9', fg: '#9a5a1a' },
+  { name: 'Daniel',  bg: '#dcecec', fg: '#1d6e6e' }
 ];
+function repColors(repName) {
+  const first = (repName || '').trim().split(/\s+/)[0].toLowerCase();
+  const t = TEAM.find(x => x.name.toLowerCase() === first);
+  return t ? { bg: t.bg, fg: t.fg } : { bg: 'var(--blue-soft)', fg: 'var(--navy-mid)' };
+}
 // Match a meeting to a rep by owner first name
 function meetingHasPerson(m, person) {
   const ownerFirst = (m.rep || '').trim().split(/\s+/)[0].toLowerCase();
@@ -556,35 +582,54 @@ const MONTHS = {january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:
 // We anchor to the conference days to ignore the acceptance date, then pick the
 // most frequently-stored timestamp (the start) over end/reminder times.
 const FILETIME_1601_TO_1970_MS = 11644473600000;
+function msIsConfDay(utcMs) {
+  const d = new Date(utcMs);
+  const c = toEastern(d.getUTCFullYear(), d.getUTCMonth()+1, d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes(), 'UTC');
+  return CONF_DATES.has(String(c.mo).padStart(2,'0')+'/'+String(c.dy).padStart(2,'0')+'/'+c.yr);
+}
 function extractMsgAppointment(bytes) {
   if (!bytes || bytes.length < 8) return null;
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const tally = {}; // "MM/DD/YYYY|HH:MM" → count
+  const counts = {}; // minute-rounded ms since epoch → count
   for (let i = 0; i + 8 <= bytes.length; i++) {
     let ticks;
     try { ticks = dv.getBigUint64(i, true); } catch(e) { break; }
     if (ticks === 0n) continue;
     const ms = Number(ticks / 10000n) - FILETIME_1601_TO_1970_MS;
-    // plausible window: 2025–2027
-    if (ms < 1735689600000 || ms > 1830297600000) continue;
-    const d = new Date(ms);
-    const conv = toEastern(d.getUTCFullYear(), d.getUTCMonth()+1, d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes(), 'UTC');
-    const mdy = String(conv.mo).padStart(2,'0')+'/'+String(conv.dy).padStart(2,'0')+'/'+conv.yr;
-    if (!CONF_DATES.has(mdy)) continue;            // ignore the acceptance date
-    const key = mdy + '|' + String(conv.hh).padStart(2,'0')+':'+String(conv.mm).padStart(2,'0');
-    tally[key] = (tally[key]||0) + 1;
+    if (ms < 1735689600000 || ms > 1830297600000) continue; // plausible 2025–2027
+    const minute = Math.floor(ms / 60000) * 60000;
+    counts[minute] = (counts[minute]||0) + 1;
   }
-  const keys = Object.keys(tally);
-  if (!keys.length) return null;
-  // highest count = the start; tie-break to the earliest time of day
-  keys.sort((a,b) => {
-    if (tally[b] !== tally[a]) return tally[b]-tally[a];
-    return a.split('|')[1] < b.split('|')[1] ? -1 : 1;
-  });
-  const [mdy, hm] = keys[0].split('|');
-  const [h, m] = hm.split(':').map(Number);
-  let dh = h % 12 || 12, ap = h >= 12 ? 'PM' : 'AM';
-  return { date: mdy, time: dh + ':' + String(m).padStart(2,'0') + ' ' + ap + ' ET' };
+  const times = Object.keys(counts).map(Number);
+  if (!times.length) return null;
+  const set = new Set(times);
+  const deltas = [15,30,45,60,90,120].map(m => m*60000);
+
+  // A real meeting has a START with a matching END 15–120 min later.
+  // The acceptance/sent date stands alone, so it won't form a pair.
+  let starts = times.filter(t => deltas.some(d => set.has(t + d)));
+
+  let chosen = null;
+  if (starts.length) {
+    starts.sort((a,b) => {
+      if (counts[b] !== counts[a]) return counts[b] - counts[a];   // most-referenced = the start (vs reminder)
+      const ac = msIsConfDay(a), bc = msIsConfDay(b);
+      if (ac !== bc) return ac ? -1 : 1;                            // tie → prefer a conference day
+      return a - b;                                                 // then earliest
+    });
+    chosen = starts[0];
+  } else {
+    // No pair found — fall back to the most frequent conference-day timestamp
+    const conf = times.filter(msIsConfDay).sort((a,b) => counts[b]-counts[a] || a-b);
+    if (!conf.length) return null;
+    chosen = conf[0];
+  }
+
+  const d = new Date(chosen);
+  const c = toEastern(d.getUTCFullYear(), d.getUTCMonth()+1, d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes(), 'UTC');
+  const mdy = String(c.mo).padStart(2,'0')+'/'+String(c.dy).padStart(2,'0')+'/'+c.yr;
+  let h = c.hh % 12 || 12, ap = c.hh >= 12 ? 'PM' : 'AM';
+  return { date: mdy, time: h + ':' + String(c.mm).padStart(2,'0') + ' ' + ap + ' ET' };
 }
 
 function parseMSG(buf, filename) {
@@ -691,6 +736,8 @@ dropZone.addEventListener('dragover', e=>{e.preventDefault();dropZone.classList.
 dropZone.addEventListener('dragleave', ()=>dropZone.classList.remove('drag'));
 dropZone.addEventListener('drop', e=>{e.preventDefault();dropZone.classList.remove('drag');if(e.dataTransfer.files[0])readFile(e.dataTransfer.files[0]);});
 icsInput.addEventListener('change', e=>{if(e.target.files[0])readFile(e.target.files[0]);});
+const calloutInput = document.getElementById('callout-input');
+if (calloutInput) calloutInput.addEventListener('change', e=>{ if(e.target.files.length) processDroppedFiles(e.target.files); e.target.value=''; });
 
 function readFile(file) {
   const name = (file.name || '').toLowerCase();
@@ -850,15 +897,16 @@ function cardHTML(m) {
   const timeAmpm = tparts && tparts[2] ? tparts[2].toUpperCase() + ' ET' : '';
   const loc = (m.location && m.location !== '—') ? m.location : '';
   const contactLine = [m.contact !== '—' ? m.contact : '', loc ? '· ' + loc : ''].filter(Boolean).join(' ');
+  const rc = repColors(m.rep);
   return `
-    <div class="meeting-card ${m.isVirtual?'virtual':'in-person'}">
+    <div class="meeting-card ${m.isVirtual?'virtual':'in-person'}" style="border-left:3px solid ${rc.fg}">
       <div class="card-time">${timeMain}<span class="ampm">${timeAmpm}</span></div>
       <div class="card-left">
         <div class="card-account">${m.account}</div>
         <div class="card-contact">${contactLine || '—'}${m.notes ? ' · 📝 ' + m.notes : ''}</div>
       </div>
       <div class="card-right">
-        <span class="rep-badge" title="Owner: ${m.rep}">${m.rep.split(' ')[0]}</span>
+        <span class="rep-badge" title="Owner: ${m.rep}" style="background:${rc.bg};color:${rc.fg}">${m.rep.split(' ')[0]}</span>
         <span class="type-dot ${m.isVirtual?'virtual':'in-person'}" title="${m.isVirtual?'Virtual':'In person'}"></span>
         <div class="card-actions">
           <button class="btn-edit" onclick="openModal(${m.id})" title="Edit" aria-label="Edit">✏️</button>
@@ -875,7 +923,7 @@ function render() {
 
   const filterWrap = document.getElementById('rep-filters');
   filterWrap.innerHTML = `<button class="filter-btn ${activeFilter==='all'?'active':''}" onclick="setFilter('all')">All</button>` +
-    TEAM.map(p=>`<button class="filter-btn ${activeFilter===p.name?'active':''}" onclick="setFilter(${JSON.stringify(p.name)})">${p.name}</button>`).join('');
+    TEAM.map(p=>`<button class="filter-btn ${activeFilter===p.name?'active':''}" onclick="setFilter(${JSON.stringify(p.name)})"><span class="chip-dot" style="background:${p.fg}"></span>${p.name}</button>`).join('');
 
   const filtered = activeFilter==='all' ? meetings : meetings.filter(m=>meetingHasPerson(m, activeFilter));
 
@@ -1037,7 +1085,13 @@ window.addEventListener('drop', e => {
   if (e.dataTransfer && e.dataTransfer.files.length) processDroppedFiles(e.dataTransfer.files);
 });
 
-
+// ── Toast ────────────────────────────────────────────────────────────────────
+function showToast(msg, success=true) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (success ? ' success' : '');
+  setTimeout(() => t.className = 'toast', 3000);
+}
 
 populateTimeOptions();
 populateDateOptions();
