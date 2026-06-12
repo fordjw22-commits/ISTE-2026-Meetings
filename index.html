@@ -183,6 +183,13 @@ main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
 .btn-export { background: transparent; border: 1px solid rgba(255,255,255,0.25); color: rgba(255,255,255,0.8); border-radius: var(--radius); padding: 7px 13px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.15s; }
 .btn-export:hover { background: rgba(255,255,255,0.1); color: white; }
 
+.page-drop { position: fixed; inset: 0; z-index: 400; background: rgba(26,46,74,0.82); backdrop-filter: blur(3px); display: none; align-items: center; justify-content: center; pointer-events: none; }
+.page-drop.show { display: flex; }
+.page-drop-inner { border: 2.5px dashed rgba(255,255,255,0.6); border-radius: 20px; padding: 48px 64px; text-align: center; color: white; }
+.page-drop-icon { font-size: 52px; margin-bottom: 12px; }
+.page-drop-title { font-size: 24px; font-weight: 700; margin-bottom: 6px; }
+.page-drop-sub { font-size: 14px; opacity: 0.8; }
+
 .confirm-overlay { display: none; position: fixed; inset: 0; background: rgba(10,20,40,0.55); z-index: 300; align-items: center; justify-content: center; padding: 20px; }
 .confirm-overlay.open { display: flex; }
 .confirm-box { background: var(--white); border-radius: var(--radius-lg); padding: 28px; max-width: 380px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.25); text-align: center; }
@@ -213,10 +220,20 @@ main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
     <span style="font-size:12px;color:rgba(255,255,255,0.5);display:flex;align-items:center;gap:6px;">
       <span class="live-dot"></span> Live
     </span>
+    <button class="btn-export" onclick="copySummary()">📋 Copy summary</button>
     <button class="btn-export" onclick="exportCSV()">⬇ Export</button>
     <button class="btn-log" onclick="openModal()">+ Log meeting</button>
   </div>
 </header>
+
+<div class="page-drop" id="page-drop">
+  <div class="page-drop-inner">
+    <div class="page-drop-icon">📥</div>
+    <div class="page-drop-title">Drop to log</div>
+    <div class="page-drop-sub">Release your invite file(s) anywhere — we'll log them instantly</div>
+  </div>
+</div>
+
 
 <main>
   <div class="section-header">
@@ -226,9 +243,9 @@ main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
 
   <div class="meeting-grid" id="meeting-grid">
     <div class="empty" id="empty-state">
-      <div class="empty-icon">📅</div>
+      <div class="empty-icon">📥</div>
       <h3>No meetings logged yet</h3>
-      <p>Click "Log meeting" and upload your .ics file — takes about 10 seconds.</p>
+      <p>Drag your invite file anywhere onto this page — it logs instantly. Or click "Log meeting" to enter one by hand.</p>
     </div>
   </div>
 </main>
@@ -863,7 +880,7 @@ function render() {
   const filtered = activeFilter==='all' ? meetings : meetings.filter(m=>meetingHasPerson(m, activeFilter));
 
   if (!filtered.length) {
-    grid.innerHTML = `<div class="empty" id="empty-state"><div class="empty-icon">📅</div><h3>${activeFilter==='all'?'No meetings logged yet':'No meetings for '+activeFilter+' yet'}</h3><p>${activeFilter==='all'?'Click "Log meeting" and upload your invite file — takes about 10 seconds.':'Try another name or view All.'}</p></div>`;
+    grid.innerHTML = `<div class="empty" id="empty-state"><div class="empty-icon">📥</div><h3>${activeFilter==='all'?'No meetings logged yet':'No meetings for '+activeFilter+' yet'}</h3><p>${activeFilter==='all'?'Drag your invite file anywhere onto this page — it logs instantly.':'Try another name or view All.'}</p></div>`;
     return;
   }
 
@@ -899,12 +916,128 @@ function exportCSV() {
   showToast('CSV downloaded ✓', true);
 }
 
-// ── Toast ────────────────────────────────────────────────────────────────────
-function showToast(msg, success=true) {
-  const t=document.getElementById('toast'); t.textContent=msg;
-  t.className='toast show'+(success?' success':'');
-  setTimeout(()=>t.className='toast',3000);
+// ── Copy summary (for the daily email/Slack to management) ───────────────────
+function buildSummary() {
+  const today = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  const lines = [];
+  lines.push(`ISTE 2026 — Meeting Summary (as of ${today})`);
+  lines.push(`Total booked: ${meetings.length}`);
+  lines.push('');
+  for (const day of CONF_DAYS) {
+    const items = meetings.filter(m=>m.date===day.date).sort((a,b)=>timeToMinutes(a.time)-timeToMinutes(b.time));
+    if (!items.length) continue;
+    const dlabel = day.pick.includes(',') ? day.pick.split(', ')[1] : day.short;
+    lines.push(`${day.name.toUpperCase()}, ${dlabel} (${items.length})`);
+    items.forEach(m=>{
+      const t = (m.time && m.time !== '—') ? m.time : 'time TBD';
+      const loc = (m.location && m.location !== '—') ? ` — ${m.location}` : '';
+      lines.push(`  • ${t} — ${m.account} (${m.rep.split(' ')[0]})${loc}`);
+    });
+    lines.push('');
+  }
+  const others = meetings.filter(m=>!CONF_DATES.has(m.date)).sort((a,b)=>timeToMinutes(a.time)-timeToMinutes(b.time));
+  if (others.length) {
+    lines.push(`OTHER DATES (${others.length})`);
+    others.forEach(m=>{
+      const t = (m.time && m.time !== '—') ? m.time : 'time TBD';
+      lines.push(`  • ${m.date} ${t} — ${m.account} (${m.rep.split(' ')[0]})`);
+    });
+  }
+  return lines.join('\n').trim();
 }
+function copySummary() {
+  if (!meetings.length) { showToast('No meetings to summarize', false); return; }
+  const text = buildSummary();
+  const done = () => showToast('Summary copied — paste into email or Slack ✓', true);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done));
+  } else {
+    fallbackCopy(text, done);
+  }
+}
+function fallbackCopy(text, done) {
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); done(); } catch(e) { showToast('Could not copy automatically', false); }
+  document.body.removeChild(ta);
+}
+
+// ── Frictionless logging: drop invite file(s) anywhere on the page ───────────
+function parsedIsComplete(p) { return !!(p.accountGuess && p.rep && p.date); }
+
+function processDroppedFiles(fileList) {
+  const files = [...fileList].filter(f => /\.(ics|msg)$/i.test(f.name));
+  if (!files.length) { showToast('Drop a .ics or .msg invite file', false); return; }
+  let logged = 0;
+  const needReview = [];
+  let pending = files.length;
+
+  files.forEach(file => {
+    const name = file.name.toLowerCase();
+    const reader = new FileReader();
+    reader.onload = e => {
+      const p = name.endsWith('.msg') ? parseMSG(e.target.result, file.name) : parseICS(e.target.result);
+      if (parsedIsComplete(p)) {
+        saveMeeting({
+          id: Date.now() + Math.floor(Math.random()*100000),
+          account: p.accountGuess,
+          contact: p.contactGuess || '—',
+          date: p.date,
+          time: p.time || '—',
+          location: p.location || DEFAULT_LOCATION,
+          rep: p.rep,
+          isVirtual: !!p.isVirtual,
+          notes: '',
+          loggedAt: new Date().toISOString()
+        });
+        logged++;
+      } else {
+        needReview.push({ p, file });
+      }
+      if (--pending === 0) finishDrop(logged, needReview);
+    };
+    if (name.endsWith('.msg')) reader.readAsArrayBuffer(file); else reader.readAsText(file);
+  });
+}
+function finishDrop(logged, needReview) {
+  if (logged) showToast(`Logged ${logged} meeting${logged!==1?'s':''} ✓`, true);
+  if (needReview.length) {
+    openModal();
+    applyParsed(needReview[0].p, needReview[0].file);
+    if (needReview.length > 1) {
+      setTimeout(()=>showToast(`${needReview.length-1} more need a detail — drop them one at a time`, false), 400);
+    } else if (!logged) {
+      setTimeout(()=>showToast('Just needs a quick detail before saving', false), 400);
+    }
+  }
+}
+
+// Page-level drag overlay + drop
+let dragDepth = 0;
+function modalIsOpen() { return document.getElementById('modal').classList.contains('open'); }
+window.addEventListener('dragenter', e => {
+  if (modalIsOpen()) return;
+  if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) {
+    dragDepth++;
+    document.getElementById('page-drop').classList.add('show');
+  }
+});
+window.addEventListener('dragover', e => { if (!modalIsOpen()) e.preventDefault(); });
+window.addEventListener('dragleave', e => {
+  if (modalIsOpen()) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) document.getElementById('page-drop').classList.remove('show');
+});
+window.addEventListener('drop', e => {
+  if (modalIsOpen()) return;            // let the modal's own drop zone handle it
+  e.preventDefault();
+  dragDepth = 0;
+  document.getElementById('page-drop').classList.remove('show');
+  if (e.dataTransfer && e.dataTransfer.files.length) processDroppedFiles(e.dataTransfer.files);
+});
+
+
 
 populateTimeOptions();
 populateDateOptions();
