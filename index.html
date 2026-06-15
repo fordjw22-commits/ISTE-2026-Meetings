@@ -122,7 +122,8 @@ main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
 .cal-event { position: absolute; left: 3px; border-radius: 6px; padding: 3px 6px; font-size: 11px; line-height: 1.25; overflow: hidden; cursor: pointer; box-shadow: var(--shadow); border-left: 3px solid; }
 .cal-event .ce-acct { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cal-event .ce-meta { font-size: 10px; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cal-event .ce-guest { font-size: 9px; font-weight: 700; color: #8a5a00; }
+.cal-event .ce-loc { font-size: 10px; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-event .ce-guest { font-size: 9px; font-weight: 700; color: #8a5a00; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .filter-btn { background: var(--white); border: 1px solid var(--border); border-radius: 99px; padding: 4px 12px; font-size: 12px; color: var(--text-mid); cursor: pointer; transition: all 0.15s; }
 .filter-btn:hover { border-color: var(--navy-mid); color: var(--navy); }
 .filter-btn.active { background: var(--navy); color: white; border-color: var(--navy); }
@@ -939,7 +940,6 @@ function confirmDelete() {
 
 // ── Render ───────────────────────────────────────────────────────────────────
 const CONF_DAYS = [
-  { date: '06/28/2026', name: 'Sunday',    short: 'Jun 28', pick: 'Sun, June 28' },
   { date: '06/29/2026', name: 'Monday',    short: 'Jun 29', pick: 'Mon, June 29' },
   { date: '06/30/2026', name: 'Tuesday',   short: 'Jun 30', pick: 'Tue, June 30' },
   { date: '07/01/2026', name: 'Wednesday', short: 'Jul 1',  pick: 'Wed, July 1' }
@@ -1097,9 +1097,11 @@ function renderCalendar(list) {
       const w = 100/lanes, left = m._lane*w;
       const rc = repColors(m.rep);
       const g = (m.guests||[]).map(id=>{const x=guestById(id);return x?x.label:'';}).filter(Boolean).join(', ');
-      return `<div class="cal-event" style="top:${top}px;height:${Math.max(40,HOUR*DUR/60-2)}px;width:calc(${w}% - 6px);left:calc(${left}% + 3px);background:${rc.bg};border-left-color:${rc.fg};color:${rc.fg}" onclick="openModal(${m.id})" title="${m.account} — ${m.time}, ${m.rep}">
+      const loc = (m.location && m.location !== '—') ? m.location : '';
+      return `<div class="cal-event" style="top:${top}px;height:${Math.max(56,HOUR*DUR/60-2)}px;width:calc(${w}% - 6px);left:calc(${left}% + 3px);background:${rc.bg};border-left-color:${rc.fg};color:${rc.fg}" onclick="openModal(${m.id})" title="${m.account} — ${m.time}${loc?', '+loc:''}, ${m.rep}">
         <div class="ce-acct">${m.account}</div>
         <div class="ce-meta">${m.time.replace(' ET','')} · ${m.rep.split(' ')[0]}</div>
+        ${loc?`<div class="ce-loc">📍 ${loc}</div>`:''}
         ${g?`<div class="ce-guest">+ ${g}</div>`:''}
       </div>`;
     }).join('');
@@ -1112,7 +1114,7 @@ function renderCalendar(list) {
   const noteHtml = notes.length ? `<div class="cal-note">⏱ ${notes.join(' · ')} — see List view.</div>` : '';
 
   wrap.innerHTML = noteHtml +
-    `<div class="cal-scroll"><div class="cal-grid" style="grid-template-columns:52px repeat(${CONF_DAYS.length}, minmax(150px, 1fr))">${head}${gutter}${cols}</div></div>`;
+    `<div class="cal-scroll"><div class="cal-grid" style="grid-template-columns:52px repeat(${CONF_DAYS.length}, minmax(180px, 1fr))">${head}${gutter}${cols}</div></div>`;
 }
 
 function setFilter(r) { activeFilter=r; render(); }
