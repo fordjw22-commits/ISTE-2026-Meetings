@@ -168,6 +168,16 @@ main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
 .form-field input, .form-field select { border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 12px; font-size: 14px; color: var(--text); background: var(--white); outline: none; transition: border-color 0.15s; width: 100%; }
 .form-field input:focus, .form-field select:focus { border-color: var(--navy-mid); }
 
+.guest-picker { display: flex; flex-wrap: wrap; gap: 7px; }
+.guest-opt { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 99px; padding: 6px 13px; font-size: 13px; color: var(--text-mid); cursor: pointer; user-select: none; transition: all 0.15s; background: var(--white); }
+.guest-opt:hover { border-color: #c98a1e; }
+.guest-opt.checked { background: #fff4dc; color: #8a5a00; border-color: #e0a93c; font-weight: 600; }
+.guest-opt .gcheck { font-size: 12px; opacity: 0; }
+.guest-opt.checked .gcheck { opacity: 1; }
+
+.card-guests { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.guest-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; background: #fff4dc; color: #8a5a00; border: 1px solid #e0a93c; border-radius: 99px; padding: 2px 9px; }
+
 .parsed-badge { display: inline-flex; align-items: center; gap: 5px; background: var(--green-soft); color: var(--green); font-size: 12px; font-weight: 600; border-radius: 99px; padding: 4px 12px; margin-bottom: 16px; }
 
 .form-actions { display: flex; gap: 10px; }
@@ -296,7 +306,11 @@ main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
         <div class="form-field"><label>Time</label><select id="f-time"><option value="">Select…</option></select></div>
         <div class="form-field full"><label>Location / Booth</label><input type="text" id="f-location" placeholder="Exhibitor Lounge or client's booth"></div>
         <div class="form-field full"><label>Meeting owner (rep) *</label><input type="text" id="f-rep" placeholder="e.g. Josh Ford"></div>
-        <div class="form-field full"><label>Notes <span style="text-transform:none;font-weight:400;color:var(--text-light);">— add any extra attendees here</span></label><input type="text" id="f-notes" placeholder="e.g. Bring deck. Holly + Editorial joining."></div>
+        <div class="form-field full">
+          <label>Anyone else joining?</label>
+          <div class="guest-picker" id="guest-picker"></div>
+        </div>
+        <div class="form-field full"><label>Notes</label><input type="text" id="f-notes" placeholder="e.g. Bring proposal deck"></div>
       </div>
       <div class="form-actions">
         <button class="btn-cancel" onclick="closeModal()">Cancel</button>
@@ -339,6 +353,17 @@ function repColors(repName) {
   const t = TEAM.find(x => x.name.toLowerCase() === first);
   return t ? { bg: t.bg, fg: t.fg } : { bg: 'var(--blue-soft)', fg: 'var(--navy-mid)' };
 }
+
+// ── Guests: extra (non-rep) folks who may join a meeting ─────────────────────
+const GUESTS = [
+  { id: 'kevin',   label: 'Kevin B.',   full: 'Kevin Bushweller' },
+  { id: 'maurice', label: 'Maurice B.', full: 'Maurice Bakley' },
+  { id: 'melissa', label: 'Melissa H.', full: 'Melissa Heyeck' },
+  { id: 'mike',    label: 'Mike B.',    full: 'Mike Bell' },
+  { id: 'holly',   label: 'Holly K.',   full: 'Holly Kurtz' },
+  { id: 'joshf',   label: 'Josh F.',    full: 'Josh Ford' }
+];
+function guestById(id) { return GUESTS.find(g => g.id === id); }
 // Match a meeting to a rep by owner first name
 function meetingHasPerson(m, person) {
   const ownerFirst = (m.rep || '').trim().split(/\s+/)[0].toLowerCase();
@@ -774,6 +799,20 @@ function applyParsed(p, file) {
 }
 
 // ── Modal ────────────────────────────────────────────────────────────────────
+// ── Guest picker ─────────────────────────────────────────────────────────────
+let pickedGuests = new Set();
+function renderGuestPicker() {
+  const wrap = document.getElementById('guest-picker');
+  if (!wrap) return;
+  wrap.innerHTML = GUESTS.map(g =>
+    `<span class="guest-opt ${pickedGuests.has(g.id)?'checked':''}" onclick="toggleGuest('${g.id}')"><span class="gcheck">✓</span>${g.label}</span>`
+  ).join('');
+}
+function toggleGuest(id) {
+  if (pickedGuests.has(id)) pickedGuests.delete(id); else pickedGuests.add(id);
+  renderGuestPicker();
+}
+
 function openModal(id) {
   editingId = id || null;
   const isEdit = !!editingId;
@@ -783,6 +822,7 @@ function openModal(id) {
   document.getElementById('drop-zone').classList.toggle('hidden', isEdit);
   document.getElementById('parsed-indicator').style.display = 'none';
 
+  pickedGuests = new Set();
   if (isEdit) {
     const m = meetings.find(x=>x.id===editingId);
     if (m) {
@@ -793,10 +833,12 @@ function openModal(id) {
       document.getElementById('f-location').value = m.location === '—' ? '' : m.location;
       document.getElementById('f-rep').value = m.rep;
       document.getElementById('f-notes').value = m.notes || '';
+      (m.guests || []).forEach(g => pickedGuests.add(g));
     }
   } else {
     document.getElementById('f-location').value = DEFAULT_LOCATION;
   }
+  renderGuestPicker();
 
   document.getElementById('modal').classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -811,6 +853,8 @@ function closeModal() {
 
 function resetForm() {
   ['f-account','f-contact','f-date','f-time','f-location','f-rep','f-notes'].forEach(id=>document.getElementById(id).value='');
+  pickedGuests = new Set();
+  renderGuestPicker();
   dropZone.classList.remove('parsed','drag','hidden');
   document.getElementById('drop-icon').textContent='📎';
   document.getElementById('drop-text').innerHTML='<strong>Drop your invite file here</strong> or click to browse';
@@ -831,14 +875,15 @@ function submitMeeting() {
   const time = timeFromInput(document.getElementById('f-time').value);
   const loc = document.getElementById('f-location').value.trim();
   const isVirtual = loc.toLowerCase().includes('virtual')||loc.toLowerCase().includes('teams')||loc.toLowerCase().includes('zoom')||loc.startsWith('http');
+  const guests = GUESTS.map(g=>g.id).filter(id=>pickedGuests.has(id));
 
   let saved;
   if (editingId) {
     const existing = meetings.find(x=>x.id===editingId) || {};
-    saved = { ...existing, id: editingId, account, contact: document.getElementById('f-contact').value.trim()||'—', date, time: time||'—', location: loc||'—', rep, isVirtual, notes: document.getElementById('f-notes').value.trim(), updatedAt: new Date().toISOString() };
+    saved = { ...existing, id: editingId, account, contact: document.getElementById('f-contact').value.trim()||'—', date, time: time||'—', location: loc||'—', rep, isVirtual, guests, notes: document.getElementById('f-notes').value.trim(), updatedAt: new Date().toISOString() };
     showToast('Meeting updated ✓', true);
   } else {
-    saved = { id: Date.now(), account, contact: document.getElementById('f-contact').value.trim()||'—', date, time: time||'—', location: loc||'—', rep, isVirtual, notes: document.getElementById('f-notes').value.trim(), loggedAt: new Date().toISOString() };
+    saved = { id: Date.now(), account, contact: document.getElementById('f-contact').value.trim()||'—', date, time: time||'—', location: loc||'—', rep, isVirtual, guests, notes: document.getElementById('f-notes').value.trim(), loggedAt: new Date().toISOString() };
     showToast('Meeting with ' + account + ' logged ✓', true);
   }
 
@@ -900,12 +945,14 @@ function cardHTML(m) {
   const loc = (m.location && m.location !== '—') ? m.location : '';
   const contactLine = [m.contact !== '—' ? m.contact : '', loc ? '· ' + loc : ''].filter(Boolean).join(' ');
   const rc = repColors(m.rep);
+  const guestTags = (m.guests || []).map(id => { const g = guestById(id); return g ? `<span class="guest-tag">👤 ${g.label}</span>` : ''; }).join('');
   return `
     <div class="meeting-card ${m.isVirtual?'virtual':'in-person'}" style="border-left:3px solid ${rc.fg}">
       <div class="card-time">${timeMain}<span class="ampm">${timeAmpm}</span></div>
       <div class="card-left">
         <div class="card-account">${m.account}</div>
         <div class="card-contact">${contactLine || '—'}${m.notes ? ' · 📝 ' + m.notes : ''}</div>
+        ${guestTags ? `<div class="card-guests">${guestTags}</div>` : ''}
       </div>
       <div class="card-right">
         <span class="rep-badge" title="Owner: ${m.rep}" style="background:${rc.bg};color:${rc.fg}">${m.rep.split(' ')[0]}</span>
@@ -962,8 +1009,8 @@ function setFilter(r) { activeFilter=r; render(); }
 // ── Export ───────────────────────────────────────────────────────────────────
 function exportCSV() {
   if (!meetings.length) { showToast('No meetings to export','error'); return; }
-  const rows=[['Account','Contact','Date','Time','Location','Owner','Virtual','Notes','Logged At']];
-  meetings.forEach(m=>rows.push([m.account,m.contact,m.date,m.time,m.location,m.rep,m.isVirtual?'Yes':'No',m.notes||'',m.loggedAt]));
+  const rows=[['Account','Contact','Date','Time','Location','Owner','Guests','Virtual','Notes','Logged At']];
+  meetings.forEach(m=>rows.push([m.account,m.contact,m.date,m.time,m.location,m.rep,(m.guests||[]).map(id=>{const g=guestById(id);return g?g.full:id;}).join('; '),m.isVirtual?'Yes':'No',m.notes||'',m.loggedAt]));
   const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
   const a=document.createElement('a'); a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv); a.download='ISTE2026_meetings.csv'; a.click();
   showToast('CSV downloaded ✓', true);
@@ -984,7 +1031,8 @@ function buildSummary() {
     items.forEach(m=>{
       const t = (m.time && m.time !== '—') ? m.time : 'time TBD';
       const loc = (m.location && m.location !== '—') ? ` — ${m.location}` : '';
-      lines.push(`  • ${t} — ${m.account} (${m.rep.split(' ')[0]})${loc}`);
+      const g = (m.guests||[]).map(id=>{const x=guestById(id);return x?x.label:'';}).filter(Boolean).join(', ');
+      lines.push(`  • ${t} — ${m.account} (${m.rep.split(' ')[0]})${loc}${g?' [+ '+g+']':''}`);
     });
     lines.push('');
   }
