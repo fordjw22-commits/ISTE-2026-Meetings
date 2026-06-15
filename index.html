@@ -98,6 +98,31 @@ main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
 @media (max-width: 600px) { .drop-callout { padding: 14px 16px; gap: 12px; } .drop-callout-icon { font-size: 24px; } }
 #stat-total-inline { display: inline-block; margin-left: 4px; font-size: 11px; font-weight: 600; color: var(--text-mid); background: var(--bg); border: 1px solid var(--border); border-radius: 99px; padding: 1px 9px; letter-spacing: 0; }
 .filter-group { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.view-toggle { display: inline-flex; gap: 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.view-btn { background: var(--white); border: none; padding: 6px 12px; font-size: 12px; font-weight: 600; color: var(--text-mid); cursor: pointer; transition: all 0.15s; }
+.view-btn + .view-btn { border-left: 1px solid var(--border); }
+.view-btn.active { background: var(--navy); color: white; }
+
+/* Calendar view */
+.cal-wrap { margin-top: 4px; }
+.cal-note { font-size: 12px; color: #8a5a00; background: #fff4dc; border: 1px solid #e0a93c; border-radius: var(--radius); padding: 7px 12px; margin-bottom: 10px; }
+.cal-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--white); }
+.cal-grid { display: grid; min-width: 680px; }
+.cal-corner { border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); }
+.cal-dayhead { text-align: center; padding: 8px 4px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); font-size: 12px; font-weight: 700; color: var(--navy); position: sticky; top: 0; background: var(--white); z-index: 2; }
+.cal-dayhead:last-child { border-right: none; }
+.cal-dayhead span { display: block; font-size: 11px; font-weight: 500; color: var(--text-light); }
+.cal-dayhead .dh-count { font-weight: 600; color: var(--text-mid); }
+.cal-timegutter { border-right: 1px solid var(--border); }
+.cal-hourlabel { font-size: 10px; color: var(--text-light); text-align: right; padding-right: 6px; transform: translateY(-6px); }
+.cal-daycol { position: relative; border-right: 1px solid var(--border); }
+.cal-daycol:last-child { border-right: none; }
+.cal-hourline { border-bottom: 1px dashed var(--border); }
+.cal-event { position: absolute; left: 3px; border-radius: 6px; padding: 3px 6px; font-size: 11px; line-height: 1.25; overflow: hidden; cursor: pointer; box-shadow: var(--shadow); border-left: 3px solid; }
+.cal-event .ce-acct { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-event .ce-meta { font-size: 10px; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-event .ce-guest { font-size: 9px; font-weight: 700; color: #8a5a00; }
 .filter-btn { background: var(--white); border: 1px solid var(--border); border-radius: 99px; padding: 4px 12px; font-size: 12px; color: var(--text-mid); cursor: pointer; transition: all 0.15s; }
 .filter-btn:hover { border-color: var(--navy-mid); color: var(--navy); }
 .filter-btn.active { background: var(--navy); color: white; border-color: var(--navy); }
@@ -267,6 +292,10 @@ main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
 
   <div class="section-header">
     <span class="section-title">All meetings <span id="stat-total-inline">0</span></span>
+    <div class="view-toggle">
+      <button class="view-btn active" id="view-list-btn" onclick="setView('list')">☰ List</button>
+      <button class="view-btn" id="view-cal-btn" onclick="setView('calendar')">▦ Calendar</button>
+    </div>
     <div class="filter-group" id="rep-filters"></div>
   </div>
 
@@ -277,6 +306,8 @@ main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
       <p>Drag your invite file anywhere onto this page — it logs instantly. Or click "Log meeting" to enter one by hand.</p>
     </div>
   </div>
+
+  <div class="cal-wrap" id="cal-wrap" style="display:none;"></div>
 </main>
 
 <!-- Log / Edit Modal -->
@@ -337,6 +368,7 @@ main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
 <script>
 let meetings = [];
 let activeFilter = 'all';
+let currentView = 'list';
 let editingId = null;
 let deletingId = null;
 
@@ -979,6 +1011,9 @@ function render() {
 
   const filtered = activeFilter==='all' ? meetings : meetings.filter(m=>meetingHasPerson(m, activeFilter));
 
+  // Calendar view always kept in sync (shown/hidden via setView)
+  renderCalendar(filtered);
+
   if (!filtered.length) {
     grid.innerHTML = `<div class="empty" id="empty-state"><div class="empty-icon">📥</div><h3>${activeFilter==='all'?'No meetings logged yet':'No meetings for '+activeFilter+' yet'}</h3><p>${activeFilter==='all'?'Drag your invite file anywhere onto this page — it logs instantly.':'Try another name or view All.'}</p></div>`;
     return;
@@ -986,7 +1021,7 @@ function render() {
 
   let html = '';
 
-  // The three conference days, always shown in order
+  // The conference days, always shown in order
   for (const day of CONF_DAYS) {
     const items = filtered.filter(m => m.date === day.date).sort((a,b)=>timeToMinutes(a.time)-timeToMinutes(b.time));
     html += `<div class="day-divider${items.length?'':' empty-day'}"><span class="day-name">${day.name}</span><span class="day-date">${day.short}</span><span class="day-count">${items.length} mtg${items.length!==1?'s':''}</span></div>`;
@@ -994,7 +1029,7 @@ function render() {
     else html += `<div class="day-empty-note">No meetings booked yet</div>`;
   }
 
-  // Anything outside the three days, grouped under "Other dates"
+  // Anything outside the conference days, grouped under "Other dates"
   const others = filtered.filter(m => !CONF_DATES.has(m.date)).sort((a,b)=>timeToMinutes(a.time)-timeToMinutes(b.time));
   if (others.length) {
     html += `<div class="day-divider other"><span class="day-name">Other dates</span><span class="day-count">${others.length} mtg${others.length!==1?'s':''}</span></div>`;
@@ -1002,6 +1037,82 @@ function render() {
   }
 
   grid.innerHTML = html;
+}
+
+function setView(v) {
+  currentView = v;
+  document.getElementById('view-list-btn').classList.toggle('active', v==='list');
+  document.getElementById('view-cal-btn').classList.toggle('active', v==='calendar');
+  document.getElementById('meeting-grid').style.display = v==='list' ? '' : 'none';
+  document.getElementById('cal-wrap').style.display = v==='calendar' ? '' : 'none';
+}
+
+function calHourLabel(h) {
+  const ap = h>=12 ? 'PM' : 'AM'; const dh = h%12 || 12;
+  return dh + ' ' + ap;
+}
+function renderCalendar(list) {
+  const wrap = document.getElementById('cal-wrap');
+  if (!wrap) return;
+  const HOUR = 54, DUR = 30; // px per hour, default meeting length (min) for block height
+  const timed = list.filter(m => CONF_DATES.has(m.date) && timeToMinutes(m.time) !== 9999);
+  const untimed = list.filter(m => CONF_DATES.has(m.date) && timeToMinutes(m.time) === 9999);
+  const offDates = list.filter(m => !CONF_DATES.has(m.date));
+
+  // time range from data, clamped/padded
+  let minM = 8*60, maxM = 18*60;
+  timed.forEach(m => { const s = timeToMinutes(m.time); if (s < minM) minM = s; if (s + 60 > maxM) maxM = s + 60; });
+  const startHour = Math.max(6, Math.floor(minM/60));
+  const endHour = Math.min(22, Math.ceil(maxM/60));
+  const hours = []; for (let h = startHour; h <= endHour; h++) hours.push(h);
+  const gridH = (endHour - startHour) * HOUR;
+
+  // lane layout per day for overlaps
+  function layout(items) {
+    const sorted = [...items].sort((a,b)=>timeToMinutes(a.time)-timeToMinutes(b.time));
+    const laneEnds = [];
+    sorted.forEach(m => {
+      const s = timeToMinutes(m.time), e = s + DUR;
+      let placed = false;
+      for (let i=0;i<laneEnds.length;i++){ if (laneEnds[i] <= s) { m._lane=i; laneEnds[i]=e; placed=true; break; } }
+      if (!placed) { m._lane = laneEnds.length; laneEnds.push(e); }
+    });
+    return { items: sorted, lanes: Math.max(1, laneEnds.length) };
+  }
+
+  const head = `<div class="cal-corner"></div>` + CONF_DAYS.map(d => {
+    const c = timed.filter(m=>m.date===d.date).length;
+    return `<div class="cal-dayhead">${d.name}<span>${d.short}</span><span class="dh-count">${c} mtg${c!==1?'s':''}</span></div>`;
+  }).join('');
+
+  const gutter = `<div class="cal-timegutter" style="position:relative;height:${gridH}px">` +
+    hours.map((h,i)=>`<div class="cal-hourlabel" style="position:absolute;top:${i*HOUR}px;right:6px;left:0;">${calHourLabel(h)}</div>`).join('') + `</div>`;
+
+  const cols = CONF_DAYS.map(d => {
+    const { items, lanes } = layout(timed.filter(m=>m.date===d.date));
+    const lines = hours.map((h,i)=>`<div class="cal-hourline" style="position:absolute;top:${i*HOUR}px;left:0;right:0;"></div>`).join('');
+    const evs = items.map(m => {
+      const s = timeToMinutes(m.time);
+      const top = (s - startHour*60)/60*HOUR;
+      const w = 100/lanes, left = m._lane*w;
+      const rc = repColors(m.rep);
+      const g = (m.guests||[]).map(id=>{const x=guestById(id);return x?x.label:'';}).filter(Boolean).join(', ');
+      return `<div class="cal-event" style="top:${top}px;height:${Math.max(40,HOUR*DUR/60-2)}px;width:calc(${w}% - 6px);left:calc(${left}% + 3px);background:${rc.bg};border-left-color:${rc.fg};color:${rc.fg}" onclick="openModal(${m.id})" title="${m.account} — ${m.time}, ${m.rep}">
+        <div class="ce-acct">${m.account}</div>
+        <div class="ce-meta">${m.time.replace(' ET','')} · ${m.rep.split(' ')[0]}</div>
+        ${g?`<div class="ce-guest">+ ${g}</div>`:''}
+      </div>`;
+    }).join('');
+    return `<div class="cal-daycol" style="height:${gridH}px">${lines}${evs}</div>`;
+  }).join('');
+
+  const notes = [];
+  if (untimed.length) notes.push(`${untimed.length} meeting${untimed.length!==1?'s':''} with no time set`);
+  if (offDates.length) notes.push(`${offDates.length} on other dates`);
+  const noteHtml = notes.length ? `<div class="cal-note">⏱ ${notes.join(' · ')} — see List view.</div>` : '';
+
+  wrap.innerHTML = noteHtml +
+    `<div class="cal-scroll"><div class="cal-grid" style="grid-template-columns:52px repeat(${CONF_DAYS.length}, minmax(150px, 1fr))">${head}${gutter}${cols}</div></div>`;
 }
 
 function setFilter(r) { activeFilter=r; render(); }
