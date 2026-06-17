@@ -380,7 +380,9 @@ const TEAM = [
   { name: 'Julie',   bg: '#e4f1e8', fg: '#1a6e44' },
   { name: 'Valerie', bg: '#efe6f6', fg: '#6a3a99' },
   { name: 'Josh',    bg: '#f7ead9', fg: '#9a5a1a' },
-  { name: 'Daniel',  bg: '#dcecec', fg: '#1d6e6e' }
+  { name: 'Daniel',  bg: '#dcecec', fg: '#1d6e6e' },
+  { name: 'Jordan',  bg: '#f7e1e1', fg: '#9a3340' },
+  { name: 'Dave',    bg: '#e6e6f5', fg: '#3f3a99' }
 ];
 function repColors(repName) {
   const first = (repName || '').trim().split(/\s+/)[0].toLowerCase();
@@ -395,6 +397,7 @@ const GUESTS = [
   { id: 'melissa', label: 'Melissa H.', full: 'Melissa Heyeck' },
   { id: 'mike',    label: 'Mike B.',    full: 'Mike Bell' },
   { id: 'holly',   label: 'Holly K.',   full: 'Holly Kurtz' },
+  { id: 'dave',    label: 'Dave D.',    full: 'Dave DePasquale' },
   { id: 'joshf',   label: 'Josh F.',    full: 'Josh Ford' }
 ];
 function guestById(id) { return GUESTS.find(g => g.id === id); }
@@ -512,7 +515,9 @@ const REP_EMAIL_MAP = {
   gblumberg: 'Guy Blumberg',
   jfagan: 'Julie Fagan',
   jford: 'Josh Ford',
-  vsaba: 'Valerie Saba'
+  vsaba: 'Valerie Saba',
+  jutech: 'Jordan Utech',
+  ddepasquale: 'Dave DePasquale'
 };
 // Resolve a rep name from an EdWeek email local-part, falling back to cleanup
 function repNameFromHandle(local) {
